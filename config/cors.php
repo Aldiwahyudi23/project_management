@@ -16,7 +16,11 @@ return [
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => ['http://localhost:5173'],
+    // 'allowed_origins' => ['http://localhost:5173'],
+    'allowed_origins' => [
+        'http://localhost:5173',
+        'https://app-inspection.cekmobil.online',
+    ],
 
     'allowed_origins_patterns' => [],
 

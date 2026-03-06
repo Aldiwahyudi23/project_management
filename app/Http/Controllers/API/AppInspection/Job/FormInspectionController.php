@@ -38,8 +38,8 @@ class FormInspectionController extends Controller
 
             // Cari data inspeksi lokal
             $inspection = Inspection::
-                where('inspector_id', $user->id)
-                ->
+                // where('inspector_id', $user->id)
+                // ->
                 find($id);
 
             // Cek apakah inspeksi ditemukan
@@ -396,102 +396,102 @@ class FormInspectionController extends Controller
     //     }
     // ─────────────────────────────────────────────────────────────
 
-private function extractFields(mixed $value): array
-{
-    $status    = null;
-    $note      = null;
-    $extraData = null;
-    $imageIds  = [];
+    private function extractFields(mixed $value): array
+    {
+        $status    = null;
+        $note      = null;
+        $extraData = null;
+        $imageIds  = [];
 
-    // ── [A] Nilai langsung (string/number/date) ───────────────
-    if (!is_array($value)) {
-        $note = (string) $value;
-        return [                          // ← ganti compact() dengan ini
-            'status'     => $status,
-            'note'       => $note,
-            'extra_data' => $extraData,
-            'image_ids'  => $imageIds,
-        ];
-    }
+        // ── [A] Nilai langsung (string/number/date) ───────────────
+        if (!is_array($value)) {
+            $note = (string) $value;
+            return [                          // ← ganti compact() dengan ini
+                'status'     => $status,
+                'note'       => $note,
+                'extra_data' => $extraData,
+                'image_ids'  => $imageIds,
+            ];
+        }
 
-    // ── [B] Array image langsung ──────────────────────────────
-    if (array_is_list($value) && !empty($value) && isset($value[0]['id'])) {
-        $imageIds = collect($value)
-            ->pluck('id')
-            ->filter()
-            ->map(fn($id) => (int) $id)
-            ->values()
-            ->toArray();
+        // ── [B] Array image langsung ──────────────────────────────
+        if (array_is_list($value) && !empty($value) && isset($value[0]['id'])) {
+            $imageIds = collect($value)
+                ->pluck('id')
+                ->filter()
+                ->map(fn($id) => (int) $id)
+                ->values()
+                ->toArray();
 
+            return [
+                'status'     => $status,
+                'note'       => $note,
+                'extra_data' => $extraData,
+                'image_ids'  => $imageIds,
+            ];
+        }
+
+        // ── [C] Object dengan 'main' ──────────────────────────────
+        if (isset($value['main'])) {
+            $main      = $value['main'];
+            $nested    = $value['nested']      ?? [];
+            $imgNested = $value['imageNested'] ?? null;
+
+            // Status dari main
+            if (is_array($main)) {
+                if (!empty($main) && isset($main[0]['id'])) {
+                    // Array of image objects: [{"id":64}]
+                    $imageIds = collect($main)
+                        ->pluck('id')
+                        ->filter()
+                        ->map(fn($id) => (int) $id)
+                        ->values()
+                        ->toArray();
+                } elseif (!empty($main)) {
+                    // Array of strings: ["NOT OK", "Repaint"]
+                    $status = $main;
+                }
+            } else {
+                $status = $main !== '' ? (string) $main : null;
+            }
+
+            // Dari nested
+            [$nestedNote, $nestedDamageIds, $nestedImageIds] = $this->extractFromNested($nested);
+
+            // Dari imageNested
+            if ($imgNested) {
+                $selectedOption = $imgNested['selectedOption'] ?? null;
+                if ($selectedOption !== null && $selectedOption !== '') {
+                    $status = is_array($selectedOption)
+                        ? $selectedOption
+                        : (string) $selectedOption;
+                }
+
+                [$imgNote, $imgDamageIds, $imgNestedImageIds] = $this->extractFromNested($imgNested['nested'] ?? []);
+
+                if ($nestedNote === null && $imgNote !== null) $nestedNote = $imgNote;
+                $nestedDamageIds = array_merge($nestedDamageIds, $imgDamageIds);
+                $nestedImageIds  = array_merge($nestedImageIds, $imgNestedImageIds);
+            }
+
+            if ($note === null) $note = $nestedNote;
+            $imageIds = array_merge($imageIds, $nestedImageIds);
+
+            // extra_data: damage_ids
+            $allDamageIds = array_values(array_unique($nestedDamageIds));
+            if (!empty($allDamageIds)) {
+                $extraData = ['damage_ids' => $allDamageIds];
+            }
+        }
+
+        // Fallback
         return [
             'status'     => $status,
             'note'       => $note,
             'extra_data' => $extraData,
-            'image_ids'  => $imageIds,
+            'image_ids'  => array_values(array_unique($imageIds)),
         ];
     }
-
-    // ── [C] Object dengan 'main' ──────────────────────────────
-    if (isset($value['main'])) {
-        $main      = $value['main'];
-        $nested    = $value['nested']      ?? [];
-        $imgNested = $value['imageNested'] ?? null;
-
-        // Status dari main
-        if (is_array($main)) {
-            if (!empty($main) && isset($main[0]['id'])) {
-                // Array of image objects: [{"id":64}]
-                $imageIds = collect($main)
-                    ->pluck('id')
-                    ->filter()
-                    ->map(fn($id) => (int) $id)
-                    ->values()
-                    ->toArray();
-            } elseif (!empty($main)) {
-                // Array of strings: ["NOT OK", "Repaint"]
-                $status = $main;
-            }
-        } else {
-            $status = $main !== '' ? (string) $main : null;
-        }
-
-        // Dari nested
-        [$nestedNote, $nestedDamageIds, $nestedImageIds] = $this->extractFromNested($nested);
-
-        // Dari imageNested
-        if ($imgNested) {
-            $selectedOption = $imgNested['selectedOption'] ?? null;
-            if ($selectedOption !== null && $selectedOption !== '') {
-                $status = is_array($selectedOption)
-                    ? $selectedOption
-                    : (string) $selectedOption;
-            }
-
-            [$imgNote, $imgDamageIds, $imgNestedImageIds] = $this->extractFromNested($imgNested['nested'] ?? []);
-
-            if ($nestedNote === null && $imgNote !== null) $nestedNote = $imgNote;
-            $nestedDamageIds = array_merge($nestedDamageIds, $imgDamageIds);
-            $nestedImageIds  = array_merge($nestedImageIds, $imgNestedImageIds);
-        }
-
-        if ($note === null) $note = $nestedNote;
-        $imageIds = array_merge($imageIds, $nestedImageIds);
-
-        // extra_data: damage_ids
-        $allDamageIds = array_values(array_unique($nestedDamageIds));
-        if (!empty($allDamageIds)) {
-            $extraData = ['damage_ids' => $allDamageIds];
-        }
-    }
-
-    // Fallback
-    return [
-        'status'     => $status,
-        'note'       => $note,
-        'extra_data' => $extraData,
-        'image_ids'  => array_values(array_unique($imageIds)),
-    ];
-}
 
     // ─────────────────────────────────────────────────────────────
     // EXTRACT FROM NESTED
