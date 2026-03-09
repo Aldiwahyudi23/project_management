@@ -14,6 +14,9 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Auth;
 
+use Spatie\Permission\Models\Role;
+use Spatie\Permission\Models\Permission;
+
 class UserResource extends Resource
 {
     protected static ?string $model = User::class;
@@ -74,19 +77,61 @@ class UserResource extends Resource
 
                 Forms\Components\Select::make('roles')
                     ->relationship(
-                        'roles', 
+                        'roles',
                         'name',
                         /**
                          * 🔒 FILTER ROLE OPTION
                          * Jika bukan super_admin, pilihan role 'super_admin' dihilangkan dari dropdown.
                          */
-                        fn (Builder $query) => Auth::user()->hasRole('super_admin') 
-                            ? $query 
+                        fn (Builder $query) => Auth::user()->hasRole('super_admin')
+                            ? $query
                             : $query->where('name', '!=', 'super_admin')
                     )
                     ->preload()
                     ->multiple()
-                    ->required(),
+                    ->live()
+                    ->required()
+                    ->afterStateUpdated(function ($state, callable $set) {
+
+                        if (!$state) {
+                            $set('permissions', []);
+                            return;
+                        }
+
+                        $permissions = Role::whereIn('id', $state)
+                            ->with('permissions')
+                            ->get()
+                            ->pluck('permissions')
+                            ->flatten()
+                            ->pluck('id')
+                            ->unique()
+                            ->toArray();
+
+                        $set('permissions', $permissions);
+                    }),
+
+                Forms\Components\CheckboxList::make('permissions')
+                    ->label('User Permissions (Override Role)')
+                    ->relationship('permissions', 'name')
+                    ->columns(2)
+                    ->options(function (Forms\Get $get) {
+
+                        $roleIds = $get('roles');
+
+                        if (!$roleIds) {
+                            return [];
+                        }
+
+                        return Role::whereIn('id', $roleIds)
+                            ->with('permissions')
+                            ->get()
+                            ->pluck('permissions')
+                            ->flatten()
+                            ->pluck('name', 'id')
+                            ->unique()
+                            ->toArray();
+                    })
+                    ->helperText('Permission ini mengikuti Role yang dipilih, tetapi bisa diubah untuk user tertentu.'),
 
                 Forms\Components\Toggle::make('is_active')
                     ->label('Status Aktif')

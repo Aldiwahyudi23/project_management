@@ -199,7 +199,8 @@ class FormInspectionController extends Controller
         }
     }
 
-    // ─────────────────────────────────────────────────────────────
+    
+// ─────────────────────────────────────────────────────────────
     // ENTRY POINT
     // ─────────────────────────────────────────────────────────────
 
@@ -228,6 +229,7 @@ class FormInspectionController extends Controller
             $validator = Validator::make($request->all(), [
                 'results'                          => 'required|array|min:1',
                 'results.*.inspection_item_id'     => 'required|integer|min:1',
+                'results.*.item_id'                => 'nullable|integer',
                 'results.*.value'                  => 'nullable',
             ]);
 
@@ -245,7 +247,7 @@ class FormInspectionController extends Controller
             // ── 4. Validasi status & inspector ────────────────────
             $statusCheck = $this->validateStatusAndInspector($inspection, $user);
             if ($statusCheck !== true) {
-                return $statusCheck; // return error response
+                return $statusCheck;
             }
 
             // ── 5. Parse & bersihkan results ─────────────────────
@@ -253,7 +255,7 @@ class FormInspectionController extends Controller
 
             // ── 6. Forward ke Backend A ───────────────────────────
             $payload = [
-                'inspection_id' => $inspection->inspection_id, // ID di sistem Backend A
+                'inspection_id' => $inspection->inspection_id,
                 'results'       => $parsedResults,
             ];
 
@@ -267,7 +269,7 @@ class FormInspectionController extends Controller
             }
 
             // ── 7. Update status local ────────────────────────────
-            $inspection->status       = 'under_review';
+            $inspection->status = 'under_review';
             $inspection->save();
 
             return response()->json([
@@ -300,12 +302,6 @@ class FormInspectionController extends Controller
     // VALIDASI STATUS & INSPECTOR
     // ─────────────────────────────────────────────────────────────
 
-    /**
-     * Aturan:
-     * - status 'in_progress' → hanya inspector yang sama boleh submit
-     * - status 'revision'    → inspector mana pun boleh submit (re-inspeksi)
-     * - status lainnya       → tolak
-     */
     private function validateStatusAndInspector(Inspection $inspection, $user): true|\Illuminate\Http\JsonResponse
     {
         $allowedStatuses = ['in_progress', 'paused', 'revision'];
@@ -317,12 +313,10 @@ class FormInspectionController extends Controller
             );
         }
 
-        // Status revision → siapa pun boleh
         if ($inspection->status === 'revision') {
             return true;
         }
 
-        // in_progress / paused → harus inspector yang sama
         if ($inspection->inspector_id !== $user->id) {
             return $this->error(
                 'Anda tidak memiliki akses untuk menyimpan inspeksi ini',
@@ -335,7 +329,23 @@ class FormInspectionController extends Controller
 
     // ─────────────────────────────────────────────────────────────
     // PARSE RESULTS
-    // Mengubah struktur frontend → struktur siap kirim ke Backend A
+    // Mengubah struktur frontend (flat) → struktur siap kirim ke Backend A
+    //
+    // Format value dari frontend (flat, post-refactor):
+    //
+    // [A] Nilai langsung (text/number/date/currency/dll)
+    //     "Baret halus" | 12345 | "2026-02-11"
+    //
+    // [B] Array image langsung (input type = image, tanpa show_option)
+    //     [{"id": 57}, {"id": 58}]
+    //
+    // [C] Object flat (radio / select / checkbox, atau image + show_option)
+    //     {
+    //       "status":     "Ada" | ["Ada", "Rusak"] | null,
+    //       "note":       "catatan" | null,
+    //       "image":      [{"id": 60}] | null,
+    //       "damage_ids": [1, 2]
+    //     }
     // ─────────────────────────────────────────────────────────────
 
     private function parseResults(array $results): array
@@ -344,11 +354,19 @@ class FormInspectionController extends Controller
 
         foreach ($results as $result) {
             $inspectionItemId = (int) $result['inspection_item_id'];
-            $itemId = (int) $result['item_id'];
-            $value            = $result['value'];
+            $itemId           = isset($result['item_id']) ? (int) $result['item_id'] : null;
+            $value            = $result['value'] ?? null;
 
-            // Skip value yang benar-benar kosong
+            // Value kosong → kirim null payload ke Backend A agar data lama dibersihkan
             if ($this->isEmptyValue($value)) {
+                $parsed[] = [
+                    'inspection_item_id' => $inspectionItemId,
+                    'item_id'            => $itemId,
+                    'status'             => null,
+                    'note'               => null,
+                    'extra_data'         => null,
+                    'image_ids'          => [],
+                ];
                 continue;
             }
 
@@ -364,36 +382,7 @@ class FormInspectionController extends Controller
 
     // ─────────────────────────────────────────────────────────────
     // EXTRACT FIELDS
-    // Mengurai value → status, note, extra_data, image_ids
-    //
-    // Struktur value dari frontend:
-    //
-    // [A] Nilai langsung (text/number/date)
-    //     "Baret halus" | 12345 | "2026-02-11"
-    //
-    // [B] Array image langsung (input type image)
-    //     [{"id":57}, {"id":58}]
-    //
-    // [C] Object dengan main (radio/checkbox/image+option)
-    //     {
-    //       "main": "rusak" | ["a","b"] | [{"id":64}],
-    //       "nested": {
-    //         "optionValue": {
-    //           "textarea":   "catatan",
-    //           "damage_ids": [1, 2],
-    //           "image":      [{"id":60}]
-    //         }
-    //       },
-    //       "imageNested": {
-    //         "selectedOption": "B",
-    //         "nested": {
-    //           "aggregated": {
-    //             "textarea":   "catatan",
-    //             "damage_ids": [47],
-    //           }
-    //         }
-    //       }
-    //     }
+    // Mengurai flat value → status, note, extra_data, image_ids
     // ─────────────────────────────────────────────────────────────
 
     private function extractFields(mixed $value): array
@@ -403,10 +392,12 @@ class FormInspectionController extends Controller
         $extraData = null;
         $imageIds  = [];
 
-        // ── [A] Nilai langsung (string/number/date) ───────────────
+        // ── [A] Nilai langsung (string / number) ──────────────────
+        // Contoh: "Baret halus", 12345, "2026-02-11"
         if (!is_array($value)) {
             $note = (string) $value;
-            return [                          // ← ganti compact() dengan ini
+
+            return [
                 'status'     => $status,
                 'note'       => $note,
                 'extra_data' => $extraData,
@@ -415,6 +406,8 @@ class FormInspectionController extends Controller
         }
 
         // ── [B] Array image langsung ──────────────────────────────
+        // Contoh: [{"id": 57, "image_url": "..."}, {"id": 58}]
+        // Ciri: array list (bukan assoc), elemen pertama punya key 'id'
         if (array_is_list($value) && !empty($value) && isset($value[0]['id'])) {
             $imageIds = collect($value)
                 ->pluck('id')
@@ -431,105 +424,56 @@ class FormInspectionController extends Controller
             ];
         }
 
-        // ── [C] Object dengan 'main' ──────────────────────────────
-        if (isset($value['main'])) {
-            $main      = $value['main'];
-            $nested    = $value['nested']      ?? [];
-            $imgNested = $value['imageNested'] ?? null;
+        // ── [C] Object flat (radio / select / checkbox / image+show_option) ──
+        // Struktur: { status, note, image, damage_ids }
+        // - status: string (radio/select) | string[] (checkbox) | null (image+show_option yang belum pilih)
+        // - note:       string | null
+        // - image:      [{"id": N, ...}] | null
+        // - damage_ids: [1, 2] | []
 
-            // Status dari main
-            if (is_array($main)) {
-                if (!empty($main) && isset($main[0]['id'])) {
-                    // Array of image objects: [{"id":64}]
-                    $imageIds = collect($main)
-                        ->pluck('id')
-                        ->filter()
-                        ->map(fn($id) => (int) $id)
-                        ->values()
-                        ->toArray();
-                } elseif (!empty($main)) {
-                    // Array of strings: ["NOT OK", "Repaint"]
-                    $status = $main;
-                }
-            } else {
-                $status = $main !== '' ? (string) $main : null;
-            }
+        // Status
+        if (array_key_exists('status', $value)) {
+            $rawStatus = $value['status'];
 
-            // Dari nested
-            [$nestedNote, $nestedDamageIds, $nestedImageIds] = $this->extractFromNested($nested);
-
-            // Dari imageNested
-            if ($imgNested) {
-                $selectedOption = $imgNested['selectedOption'] ?? null;
-                if ($selectedOption !== null && $selectedOption !== '') {
-                    $status = is_array($selectedOption)
-                        ? $selectedOption
-                        : (string) $selectedOption;
-                }
-
-                [$imgNote, $imgDamageIds, $imgNestedImageIds] = $this->extractFromNested($imgNested['nested'] ?? []);
-
-                if ($nestedNote === null && $imgNote !== null) $nestedNote = $imgNote;
-                $nestedDamageIds = array_merge($nestedDamageIds, $imgDamageIds);
-                $nestedImageIds  = array_merge($nestedImageIds, $imgNestedImageIds);
-            }
-
-            if ($note === null) $note = $nestedNote;
-            $imageIds = array_merge($imageIds, $nestedImageIds);
-
-            // extra_data: damage_ids
-            $allDamageIds = array_values(array_unique($nestedDamageIds));
-            if (!empty($allDamageIds)) {
-                $extraData = ['damage_ids' => $allDamageIds];
+            if (is_array($rawStatus)) {
+                // Checkbox: ["Ada", "Rusak"]
+                $filtered = array_values(array_filter($rawStatus, fn($v) => $v !== null && $v !== ''));
+                $status   = !empty($filtered) ? $filtered : null;
+            } elseif ($rawStatus !== null && $rawStatus !== '') {
+                // Radio / select: "Ada"
+                $status = (string) $rawStatus;
             }
         }
 
-        // Fallback
+        // Note (dari textarea nested)
+        if (!empty($value['note']) && is_string($value['note'])) {
+            $note = $value['note'];
+        }
+
+        // Image ids (dari nested image)
+        if (!empty($value['image']) && is_array($value['image'])) {
+            $imageIds = collect($value['image'])
+                ->pluck('id')
+                ->filter()
+                ->map(fn($id) => (int) $id)
+                ->values()
+                ->toArray();
+        }
+
+        // Damage ids → extra_data
+        if (!empty($value['damage_ids']) && is_array($value['damage_ids'])) {
+            $damageIds = array_values(array_unique(array_map('intval', $value['damage_ids'])));
+            if (!empty($damageIds)) {
+                $extraData = ['damage_ids' => $damageIds];
+            }
+        }
+
         return [
             'status'     => $status,
             'note'       => $note,
             'extra_data' => $extraData,
             'image_ids'  => array_values(array_unique($imageIds)),
         ];
-    }
-
-    // ─────────────────────────────────────────────────────────────
-    // EXTRACT FROM NESTED
-    // Menggali note, damage_ids, image_ids dari nested/imageNested
-    // ─────────────────────────────────────────────────────────────
-
-    private function extractFromNested(array $nested): array
-    {
-        $note      = null;
-        $damageIds = [];
-        $imageIds  = [];
-
-        foreach ($nested as $optionValue => $optionData) {
-            if (!is_array($optionData)) continue;
-
-            // Textarea → note (ambil pertama yang tidak null/kosong)
-            if ($note === null && !empty($optionData['textarea'])) {
-                $note = (string) $optionData['textarea'];
-            }
-
-            // Damage IDs
-            if (!empty($optionData['damage_ids']) && is_array($optionData['damage_ids'])) {
-                foreach ($optionData['damage_ids'] as $did) {
-                    $damageIds[] = (int) $did;
-                }
-            }
-
-            // Image IDs dari nested option
-            if (!empty($optionData['image']) && is_array($optionData['image'])) {
-                foreach ($optionData['image'] as $img) {
-                    if (!empty($img['id'])) {
-                        $imageIds[] = (int) $img['id'];
-                    }
-                }
-            }
-        }
-
-        return [$note, $damageIds, $imageIds];
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -541,17 +485,26 @@ class FormInspectionController extends Controller
         if ($value === null || $value === '') return true;
         if (is_array($value) && empty($value)) return true;
 
-        // Array berisi object kosong: [{}]
+        // Array image kosong: [{}] atau [{"image_url": "..."}] tanpa id
         if (is_array($value) && array_is_list($value)) {
-            $filtered = array_filter($value, fn($v) => !empty($v));
-            if (empty($filtered)) return true;
+            $withId = array_filter($value, fn($v) => is_array($v) && !empty($v['id']));
+            if (empty($withId)) return true;
         }
 
-        // Object dengan main null/kosong
-        if (is_array($value) && isset($value['main'])) {
-            $main = $value['main'];
-            if ($main === null || $main === '') return true;
-            if (is_array($main) && empty($main)) return true;
+        // Object flat: status null/kosong DAN note null DAN image kosong
+        if (is_array($value) && !array_is_list($value)) {
+            $status    = $value['status']     ?? null;
+            $note      = $value['note']       ?? null;
+            $image     = $value['image']      ?? null;
+            $damageIds = $value['damage_ids'] ?? [];
+
+            $statusEmpty = $status === null || $status === ''
+                || (is_array($status) && empty($status));
+            $noteEmpty   = $note === null || $note === '';
+            $imageEmpty  = empty($image) || (is_array($image) && empty(array_filter($image, fn($v) => !empty($v['id']))));
+            $damageEmpty = empty($damageIds);
+
+            return $statusEmpty && $noteEmpty && $imageEmpty && $damageEmpty;
         }
 
         return false;
@@ -563,6 +516,5 @@ class FormInspectionController extends Controller
         if ($extra !== null) $body = array_merge($body, (array) $extra);
         return response()->json($body, $status);
     }
-    
 
 }
