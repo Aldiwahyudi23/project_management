@@ -131,8 +131,8 @@ class FormInspectionController extends Controller
     {
         $request->validate([
             'inspection_id'        => 'required|integer',
-            'inspection_item_id'   => 'required|integer',
-            'item_id'              => 'required|integer',
+            'inspection_item_id'   => 'integer',
+            'item_id'              => 'integer',
             'images'               => 'required',
             // selected_option_value WAJIB dikirim, validasi ada/tidaknya
             // akan ditentukan di Backend A berdasarkan input_type SectionItem
@@ -199,7 +199,31 @@ class FormInspectionController extends Controller
         }
     }
 
-    
+    public function getUnassignedImages(int $inspectionId)
+    {
+        try {
+            $result = $this->inspectionApi->getUnassignedImages($inspectionId);
+
+            if (!$result['success']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $result['message'] ?? 'Failed to fetch unassigned images',
+                ], 500);
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => $result['data'] ?? [],
+            ]);
+
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unexpected server error',
+            ], 500);
+        }
+    }
+
 // ─────────────────────────────────────────────────────────────
     // ENTRY POINT
     // ─────────────────────────────────────────────────────────────

@@ -288,6 +288,37 @@ class InspectionApiService
         }
     }
 
+    public function getUnassignedImages(int $inspectionId): array
+    {
+        $url = "{$this->baseUrl}/inspection/inspection-images/unassigned/{$inspectionId}";
+
+        $response = Http::withToken($this->token)
+            ->acceptJson()
+            ->timeout(10)
+            ->get($url);
+
+        if ($response->failed()) {
+            // Log::error('inspection API error', [
+            //     'url'    => $url,
+            //     'status' => $response->status(),
+            //     'body'   => $response->body(),
+            // ]);
+
+            return [
+                'success' => false,
+                'message' => 'inspection API error',
+                'error'   => $response->json(),
+            ];
+        }
+
+        return [
+            'success' => true,
+            'data'    => $response->json('inspection') 
+                ?? $response->json('data') 
+                ?? $response->json(),
+        ];
+    }
+    
     /**
      * Submit hasil inspeksi ke Backend A
      * Dipanggil dari SaveFormInspectionController setelah validasi lokal selesai.
@@ -307,7 +338,7 @@ class InspectionApiService
      *     },
      *     ...
      *   ]
-     * }
+     * } inspection-images/unassigned
      */
     public function submitInspectionForm(array $payload): array
     {

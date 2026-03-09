@@ -55,6 +55,9 @@ Route::prefix('app-inspection')->middleware(['auth:sanctum'])->group(function ()
         // Hapus data Item
         Route::delete('/{inspectionId}/items/{itemId}', [FormInspectionController::class, 'deleteItem']);
 
+        //get data item untuk null 
+        Route::get('/{inspectionId}/images/unassigned', [FormInspectionController::class, 'getUnassignedImages']);
+
         //SaveFormInspection
         Route::post('/{inspectionId}/save', [FormInspectionController::class, 'saveFormInspection']);
 
