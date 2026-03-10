@@ -224,6 +224,44 @@ class FormInspectionController extends Controller
         }
     }
 
+    public function patchAssignImages(Request $request)
+    {
+        $request->validate([
+            'inspection_item_id' => 'required|integer',
+            'image_ids' => 'required|array',
+            'image_ids.*' => 'integer'
+        ]);
+
+        try {
+
+            $result = $this->inspectionApi->patchAssignImages(
+                $request->input('image_ids'),
+                $request->input('inspection_item_id')
+            );
+
+            if (!$result['success']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $result['message'] ?? 'Failed to assign images',
+                ], 500);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Images assigned successfully'
+            ]);
+
+        } catch (\Throwable $e) {
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Unexpected server error',
+                'error' => $e->getMessage()
+            ], 500);
+
+        }
+    }
+
 // ─────────────────────────────────────────────────────────────
     // ENTRY POINT
     // ─────────────────────────────────────────────────────────────

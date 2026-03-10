@@ -57,6 +57,12 @@ Route::prefix('app-inspection')->middleware(['auth:sanctum'])->group(function ()
 
         //get data item untuk null 
         Route::get('/{inspectionId}/images/unassigned', [FormInspectionController::class, 'getUnassignedImages']);
+        // update inspection item id untuk gambar yang sudah di assign
+
+        Route::patch(
+            '/images/assign',
+            [FormInspectionController::class, 'patchAssignImages']
+        );
 
         //SaveFormInspection
         Route::post('/{inspectionId}/save', [FormInspectionController::class, 'saveFormInspection']);

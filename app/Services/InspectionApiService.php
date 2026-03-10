@@ -298,11 +298,6 @@ class InspectionApiService
             ->get($url);
 
         if ($response->failed()) {
-            // Log::error('inspection API error', [
-            //     'url'    => $url,
-            //     'status' => $response->status(),
-            //     'body'   => $response->body(),
-            // ]);
 
             return [
                 'success' => false,
@@ -316,6 +311,35 @@ class InspectionApiService
             'data'    => $response->json('inspection') 
                 ?? $response->json('data') 
                 ?? $response->json(),
+        ];
+    }
+
+    public function patchAssignImages(
+        array $imageIds,
+        int $inspectionItemId
+    ): array {
+
+        $url = "{$this->baseUrl}/inspection/inspection-images/assign";
+
+        $response = Http::withToken($this->token)
+            ->acceptJson()
+            ->timeout(10)
+            ->patch($url, [
+                'inspection_item_id' => $inspectionItemId,
+                'image_ids' => $imageIds
+            ]);
+
+        if ($response->failed()) {
+            return [
+                'success' => false,
+                'message' => 'inspection API error',
+                'error' => $response->json(),
+            ];
+        }
+
+        return [
+            'success' => true,
+            'data' => $response->json()
         ];
     }
     
