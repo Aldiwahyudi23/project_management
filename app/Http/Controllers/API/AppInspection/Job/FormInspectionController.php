@@ -261,7 +261,47 @@ class FormInspectionController extends Controller
 
         }
     }
+public function saveInspectionVehicle(Request $request, int $inspectionId)
+{
+    $request->validate([
+        'license_plate' => 'required|string|max:20',
+        'vehicle_name'  => 'required|string|max:255',
+        'vehicle_id'    => 'required|integer'
+    ]);
 
+    try {
+
+        $result = $this->inspectionApi->putInspectionVehicle(
+            $inspectionId,
+            $request->license_plate,
+            (int) $request->vehicle_id,
+            $request->vehicle_name
+        );
+
+        if (!$result['success']) {
+            return response()->json([
+                'success' => false,
+                'message' => $result['message'] ?? 'Failed to update vehicle',
+                'error'   => $result['error'] ?? null
+            ], 500);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Vehicle updated successfully',
+            // 'data'    => $result['data']
+        ]);
+
+    } catch (\Throwable $e) {
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Unexpected server error',
+            'error'   => $e->getMessage()
+        ], 500);
+
+    }
+}
 // ─────────────────────────────────────────────────────────────
     // ENTRY POINT
     // ─────────────────────────────────────────────────────────────

@@ -314,6 +314,7 @@ class InspectionApiService
         ];
     }
 
+    //Untuk mengganti item_id gambar di poto bebas jadi sudah di assign ke item tertentu
     public function patchAssignImages(
         array $imageIds,
         int $inspectionItemId
@@ -343,6 +344,40 @@ class InspectionApiService
         ];
     }
     
+public function putInspectionVehicle(
+    int $inspectionId,
+    string $licensePlate,
+    int $vehicleId,
+    string $vehicleName
+): array {
+
+    $url = "{$this->baseUrl}/inspection/{$inspectionId}/vehicle";
+
+    $response = Http::withToken($this->token)
+        ->acceptJson()
+        ->asJson()
+        ->timeout(10)
+        ->put($url, [
+            'license_plate' => $licensePlate,
+            'vehicle_name'  => $vehicleName,
+            'vehicle_id'    => $vehicleId
+        ]);
+
+    if ($response->failed()) {
+        return [
+            'success' => false,
+            'message' => 'Inspection API error',
+            'status'  => $response->status(),
+            'error'   => $response->json()
+        ];
+    }
+
+    return [
+        'success' => true,
+        'data' => $response->json()
+    ];
+}
+
     /**
      * Submit hasil inspeksi ke Backend A
      * Dipanggil dari SaveFormInspectionController setelah validasi lokal selesai.

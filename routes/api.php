@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AppInspection\Auth\AuthController;
+use App\Http\Controllers\Api\AppInspection\InspectionVehicleController;
 use App\Http\Controllers\Api\AppInspection\Job\FormInspectionController;
 use App\Http\Controllers\Api\AppInspection\Job\JobController;
 use App\Http\Controllers\API\VehicleController;
@@ -59,16 +60,30 @@ Route::prefix('app-inspection')->middleware(['auth:sanctum'])->group(function ()
         Route::get('/{inspectionId}/images/unassigned', [FormInspectionController::class, 'getUnassignedImages']);
         // update inspection item id untuk gambar yang sudah di assign
 
-        Route::patch(
-            '/images/assign',
-            [FormInspectionController::class, 'patchAssignImages']
-        );
+        Route::patch('/images/assign',[FormInspectionController::class, 'patchAssignImages']);
+        Route::put('/{inspectionId}/update',[FormInspectionController::class, 'saveInspectionVehicle']);
 
         //SaveFormInspection
         Route::post('/{inspectionId}/save', [FormInspectionController::class, 'saveFormInspection']);
 
         
     });
+
+    Route::prefix('vehicle')->group(function () {
+    // Vehicle selection endpoints (proxy ke Backend B)
+    Route::prefix('selection')->group(function () {
+        Route::get('/brands', [InspectionVehicleController::class, 'getBrands']);
+        Route::get('/models', [InspectionVehicleController::class, 'getModels']);
+        Route::get('/types', [InspectionVehicleController::class, 'getTypes']);
+        Route::get('/years', [InspectionVehicleController::class, 'getYears']);
+        Route::get('/cc', [InspectionVehicleController::class, 'getCc']);
+        Route::get('/transmissions', [InspectionVehicleController::class, 'getTransmissions']);
+        Route::get('/fuel-types', [InspectionVehicleController::class, 'getFuelTypes']);
+        Route::get('/market-periods', [InspectionVehicleController::class, 'getMarketPeriods']);
+        Route::get('/get-detail', [InspectionVehicleController::class, 'getVehicleDetail']);
+        Route::get('/search', [InspectionVehicleController::class, 'searchVehicles']);
+    });
+});
 });
 
 
