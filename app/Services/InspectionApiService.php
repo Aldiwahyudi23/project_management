@@ -442,4 +442,57 @@ public function putInspectionVehicle(
             ];
         }
     }
+
+
+    public function getDataReport(int $inspectionId): array
+    {
+        $url = "{$this->baseUrl}/inspection/report/data-report/{$inspectionId}";
+
+        $response = Http::withToken($this->token)
+            ->acceptJson()
+            ->timeout(10)
+            ->get($url);
+
+        if ($response->failed()) {
+
+            return [
+                'success' => false,
+                'message' => 'inspection API error',
+                'error'   => $response->json(),
+            ];
+        }
+
+        return [
+            'success' => true,
+            'data'    => $response->json('inspection') 
+                ?? $response->json('data') 
+                ?? $response->json(),
+        ];
+    }
+
+        public function postGeneratePDF(int $inspectionId): array
+    {
+        $url = "{$this->baseUrl}/inspection/report/data-report/{$inspectionId}/get";
+
+        $response = Http::withToken($this->token)
+            ->acceptJson()
+            ->timeout(10)
+            ->get($url);
+
+        if ($response->failed()) {
+
+            return [
+                'success' => false,
+                'message' => 'inspection API error',
+                'error'   => $response->json(),
+            ];
+        }
+
+        return [
+            'success' => true,
+            'data'    => $response->json('inspection') 
+                ?? $response->json('data') 
+                ?? $response->json(),
+        ];
+    }
 }

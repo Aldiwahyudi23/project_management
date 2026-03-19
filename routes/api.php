@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AppInspection\Auth\AuthController;
+use App\Http\Controllers\Api\AppInspection\InspectionReportController;
 use App\Http\Controllers\Api\AppInspection\InspectionVehicleController;
 use App\Http\Controllers\Api\AppInspection\Job\FormInspectionController;
 use App\Http\Controllers\Api\AppInspection\Job\JobController;
@@ -65,8 +66,15 @@ Route::prefix('app-inspection')->middleware(['auth:sanctum'])->group(function ()
 
         //SaveFormInspection
         Route::post('/{inspectionId}/save', [FormInspectionController::class, 'saveFormInspection']);
-
         
+    });
+    Route::prefix('report')->group(function(){
+        // Get data report inspection
+        Route::get('/{id}', [InspectionReportController::class, 'getDataReport']);
+
+        //generate PDF
+        Route::post('/{id}/generate-pdf', [InspectionReportController::class, 'GeneratePDF']);
+    
     });
 
     Route::prefix('vehicle')->group(function () {
