@@ -74,6 +74,11 @@ Route::prefix('app-inspection')->middleware(['auth:sanctum'])->group(function ()
 
         //generate PDF
         Route::post('/{id}/generate-pdf', [InspectionReportController::class, 'GeneratePDF']);
+        //Crud estimasi 
+        Route::post('/{id}/estimasi',              [InspectionReportController::class, 'store']);
+        Route::put('/{id}/estimasi/{estimasiId}',  [InspectionReportController::class, 'update']);
+        Route::delete('/{id}/estimasi/{estimasiId}', [InspectionReportController::class, 'destroy']);
+
     
     });
 

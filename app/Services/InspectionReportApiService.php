@@ -50,7 +50,6 @@ class InspectionReportApiService
     public function postGeneratePDF(int $inspectionId): array
     {
         $url = "{$this->baseUrl}/inspection/report/{$inspectionId}/pdf";
-        // Alternatif: $url = "{$this->baseUrl}/inspection/report/{$inspectionId}/pdf";
 
         try {
             $response = Http::withToken($this->token)
@@ -87,6 +86,155 @@ class InspectionReportApiService
             return [
                 'success' => false,
                 'message' => 'Service exception: ' . $e->getMessage()
+            ];
+        }
+    }
+
+    
+    /* =====================
+     * ESTIMASI — STORE
+     * ===================== */
+ 
+    /**
+     * POST /inspection/report/{inspectionId}/estimasi
+     */
+    public function storeEstimasi(int $inspectionId, array $payload): array
+    {
+        $url = "{$this->baseUrl}/inspection/report/{$inspectionId}/estimasi";
+ 
+        try {
+            $response = Http::withToken($this->token)
+                ->acceptJson()
+                ->timeout(15)
+                ->post($url, $payload);
+ 
+            if ($response->failed()) {
+                Log::error('Inspection API Error (storeEstimasi)', [
+                    'status'        => $response->status(),
+                    'body'          => $response->body(),
+                    'inspection_id' => $inspectionId,
+                ]);
+ 
+                return [
+                    'success' => false,
+                    'message' => 'Failed to create estimasi',
+                    'error'   => $response->json(),
+                ];
+            }
+ 
+            return [
+                'success' => true,
+                'data'    => $response->json('data') ?? $response->json(),
+            ];
+        } catch (\Exception $e) {
+            Log::error('Exception in InspectionReportApiService::storeEstimasi', [
+                'message'       => $e->getMessage(),
+                'inspection_id' => $inspectionId,
+            ]);
+ 
+            return [
+                'success' => false,
+                'message' => 'Service exception: ' . $e->getMessage(),
+            ];
+        }
+    }
+ 
+    /* =====================
+     * ESTIMASI — UPDATE
+     * ===================== */
+ 
+    /**
+     * PUT /inspection/report/{inspectionId}/estimasi/{estimasiId}
+     */
+    public function updateEstimasi(int $inspectionId, int $estimasiId, array $payload): array
+    {
+        $url = "{$this->baseUrl}/inspection/report/{$inspectionId}/estimasi/{$estimasiId}";
+ 
+        try {
+            $response = Http::withToken($this->token)
+                ->acceptJson()
+                ->timeout(15)
+                ->put($url, $payload);
+ 
+            if ($response->failed()) {
+                Log::error('Inspection API Error (updateEstimasi)', [
+                    'status'        => $response->status(),
+                    'body'          => $response->body(),
+                    'inspection_id' => $inspectionId,
+                    'estimasi_id'   => $estimasiId,
+                ]);
+ 
+                return [
+                    'success' => false,
+                    'message' => 'Failed to update estimasi',
+                    'error'   => $response->json(),
+                ];
+            }
+ 
+            return [
+                'success' => true,
+                'data'    => $response->json('data') ?? $response->json(),
+            ];
+        } catch (\Exception $e) {
+            Log::error('Exception in InspectionReportApiService::updateEstimasi', [
+                'message'       => $e->getMessage(),
+                'inspection_id' => $inspectionId,
+                'estimasi_id'   => $estimasiId,
+            ]);
+ 
+            return [
+                'success' => false,
+                'message' => 'Service exception: ' . $e->getMessage(),
+            ];
+        }
+    }
+ 
+    /* =====================
+     * ESTIMASI — DESTROY
+     * ===================== */
+ 
+    /**
+     * DELETE /inspection/report/{inspectionId}/estimasi/{estimasiId}
+     */
+    public function destroyEstimasi(int $inspectionId, int $estimasiId): array
+    {
+        $url = "{$this->baseUrl}/inspection/report/{$inspectionId}/estimasi/{$estimasiId}";
+ 
+        try {
+            $response = Http::withToken($this->token)
+                ->acceptJson()
+                ->timeout(15)
+                ->delete($url);
+ 
+            if ($response->failed()) {
+                Log::error('Inspection API Error (destroyEstimasi)', [
+                    'status'        => $response->status(),
+                    'body'          => $response->body(),
+                    'inspection_id' => $inspectionId,
+                    'estimasi_id'   => $estimasiId,
+                ]);
+ 
+                return [
+                    'success' => false,
+                    'message' => 'Failed to delete estimasi',
+                    'error'   => $response->json(),
+                ];
+            }
+ 
+            return [
+                'success' => true,
+                'message' => 'Estimasi deleted successfully.',
+            ];
+        } catch (\Exception $e) {
+            Log::error('Exception in InspectionReportApiService::destroyEstimasi', [
+                'message'       => $e->getMessage(),
+                'inspection_id' => $inspectionId,
+                'estimasi_id'   => $estimasiId,
+            ]);
+ 
+            return [
+                'success' => false,
+                'message' => 'Service exception: ' . $e->getMessage(),
             ];
         }
     }

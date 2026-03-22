@@ -141,4 +141,163 @@ class InspectionReportController extends Controller
             ], 503);
         }
     }
+
+    /* =====================
+     * HELPER
+     * ===================== */
+
+    /**
+     * Ambil Inspection dari DB management berdasarkan id lokal,
+     * lalu kembalikan inspection_id milik backend inspection.
+     */
+    private function resolveInspectionId(int $localId): Inspection
+    {
+        return Inspection::findOrFail($localId);
+    }
+
+    /* =====================
+     * STORE
+     * ===================== */
+
+    /**
+     * POST /api/estimasi/{id}
+     * $id = id inspection di DB management
+     */
+    public function store(Request $request, int $id)
+    {
+        $inspection = $this->resolveInspectionId($id);
+
+        $validated = $request->validate([
+            'part_name'          => 'required|string|max:255',
+            'repair_description' => 'required|string',
+            'urgency'            => 'required|string|in:immediate,soon,optional,monitor',
+            'status'             => 'required|string|in:required,recommended,optional',
+            'estimated_cost'     => 'required|numeric|min:0',
+
+            // Optional
+            'notes'                              => 'nullable|string',
+            'related_sources'                    => 'nullable|array',
+            'related_sources.damages'            => 'nullable|array',
+            'related_sources.damages.*'          => 'integer',
+            'related_sources.inspection_items'   => 'nullable|array',
+            'related_sources.inspection_items.*' => 'integer',
+        ]);
+
+        // Ambil nama user yang sedang login
+        $createdByName = Auth::user()->name;
+
+        $payload = array_merge($validated, [
+            'created_by' => $createdByName,
+        ]);
+
+        // Teruskan ke backend inspection menggunakan inspection_id relasi
+        $result = $this->inspectionReportApi->storeEstimasi(
+            $inspection->inspection_id,
+            $payload
+        );
+
+        if (!$result['success']) {
+            return response()->json([
+                'success' => false,
+                'message' => $result['message'],
+                'error'   => $result['error'] ?? null,
+            ], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Estimasi berhasil dibuat.',
+            'data'    => $result['data'],
+        ], 201);
+    }
+
+    /* =====================
+     * UPDATE
+     * ===================== */
+
+    /**
+     * PUT /api/estimasi/{id}/{estimasiId}
+     * $id        = id inspection di DB management
+     * $estimasiId = id estimasi di backend inspection
+     */
+    public function update(Request $request, int $id, int $estimasiId)
+    {
+        $inspection = $this->resolveInspectionId($id);
+
+        $validated = $request->validate([
+            'part_name'          => 'sometimes|required|string|max:255',
+            'repair_description' => 'sometimes|required|string',
+            'urgency'            => 'sometimes|required|string|in:immediate,soon,optional,monitor',
+            'status'             => 'sometimes|required|string|in:required,recommended,optional',
+            'estimated_cost'     => 'sometimes|required|numeric|min:0',
+
+            // Optional
+            'notes'                              => 'nullable|string',
+            'related_sources'                    => 'nullable|array',
+            'related_sources.damages'            => 'nullable|array',
+            'related_sources.damages.*'          => 'integer',
+            'related_sources.inspection_items'   => 'nullable|array',
+            'related_sources.inspection_items.*' => 'integer',
+        ]);
+
+        // Ambil nama user yang sedang login sebagai updated_by
+        $updatedByName = Auth::user()->name;
+
+        $payload = array_merge($validated, [
+            'updated_by' => $updatedByName,
+        ]);
+
+        $result = $this->inspectionReportApi->updateEstimasi(
+            $inspection->inspection_id,
+            $estimasiId,
+            $payload
+        );
+
+        if (!$result['success']) {
+            return response()->json([
+                'success' => false,
+                'message' => $result['message'],
+                'error'   => $result['error'] ?? null,
+            ], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Estimasi berhasil diupdate.',
+            'data'    => $result['data'],
+        ]);
+    }
+
+    /* =====================
+     * DESTROY
+     * ===================== */
+
+    /**
+     * DELETE /api/estimasi/{id}/{estimasiId}
+     * $id        = id inspection di DB management
+     * $estimasiId = id estimasi di backend inspection
+     */
+    public function destroy(int $id, int $estimasiId)
+    {
+        $inspection = $this->resolveInspectionId($id);
+
+        $result = $this->inspectionReportApi->destroyEstimasi(
+            $inspection->inspection_id,
+            $estimasiId
+        );
+
+        if (!$result['success']) {
+            return response()->json([
+                'success' => false,
+                'message' => $result['message'],
+                'error'   => $result['error'] ?? null,
+            ], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Estimasi berhasil dihapus.',
+        ]);
+    }
+
 }
