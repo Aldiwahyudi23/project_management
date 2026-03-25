@@ -238,4 +238,25 @@ class InspectionReportApiService
             ];
         }
     }
+
+    public function downloadPDF(int $inspectionId)
+    {
+        $url = "{$this->baseUrl}/inspection/report/{$inspectionId}/document/download";
+
+        // Kembalikan raw response, bukan array
+        return Http::withToken($this->token)
+            ->timeout(30)
+            ->get($url);
+    }
+
+    public function previewPDF(int $inspectionId)
+    {
+        $url = "{$this->baseUrl}/inspection/report/{$inspectionId}/document/preview";
+
+        // Ada typo di kode lama — kurang "/" sebelum document
+        return Http::withToken($this->token)
+            ->timeout(30)
+            ->get($url);
+    }
+
 }

@@ -53,6 +53,10 @@ class JobDetailResource extends JsonResource
                 'name' => $this->submittedBy?->name,
                 'phone' => $this->submittedBy?->phone,
             ],
+            'document' => [
+               'inspection_code' => $external['inspection_code'] ?? Null,
+                'has_document' => $external['has_document'] ?? Null,
+            ],
 
             'vehicle' => [
                 'license_plate' => $vehicle['license_plate'] ?? null,

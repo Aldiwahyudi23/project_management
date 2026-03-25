@@ -13,6 +13,10 @@ class InspectionReportController extends Controller
 {
     protected InspectionReportApiService $inspectionReportApi;
 
+    protected array $allowedStatusForDownload = [
+        'approved',
+        'completed',
+    ];
     protected array $allowedStatusForView = [
         'under_review',
         'approved',
@@ -122,6 +126,11 @@ class InspectionReportController extends Controller
                     'message' => 'Gagal membuat PDF. Silakan coba beberapa saat lagi.',
                 ], 500);
             }
+
+            // Update inspection:ubah status jika perlu
+            $inspection->update([
+                'status'        => 'approved',
+            ]);
 
             return response()->json([
                 'success' => true,
@@ -300,4 +309,97 @@ class InspectionReportController extends Controller
         ]);
     }
 
+    public function downloadPDF($id)
+    {
+        $inspection = Inspection::find($id);
+
+        if (!$inspection) {
+            return response()->json(['success' => false, 'message' => 'Inspection not found'], 404);
+        }
+
+        // if (!in_array($inspection->status, $this->allowedStatusForDownload)) {
+        //     return response()->json(['success' => false, 'message' => 'Laporan tidak tersedia untuk status inspeksi saat ini.'], 403);
+        // }
+
+        try {
+            $response = $this->inspectionReportApi->downloadPDF($inspection->inspection_id);
+
+            if ($response->failed()) {
+                return response()->json(['success' => false, 'message' => 'Gagal mengambil dokumen.'], 500);
+            }
+
+            // Ambil license plate dari settings JSON
+            $licensePlate = $inspection->settings['license_plate'] 
+                ?? $inspection->license_plate  // fallback ke kolom langsung
+                ?? 'unknown';
+
+            // Sanitasi untuk nama file (hapus spasi jadi underscore, hapus karakter aneh)
+            $safeName = str_replace(' ', '_', $licensePlate);
+            $safeName = preg_replace('/[^A-Za-z0-9_\-]/', '', $safeName);
+
+            $fileName = 'laporan_inspeksi_' . $safeName . '.pdf';
+            // Hasil: laporan_inspeksi_D_1234_ABC.pdf
+
+            // Stream file PDF langsung ke frontend
+            return response($response->body(), 200, [
+                'Content-Type'        => 'application/pdf',
+                'Content-Disposition' => 'attachment; filename="' . $fileName . '"',
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('downloadPDF failed', [
+                'inspection_id' => $inspection->inspection_id,
+                'error'         => $e->getMessage(),
+            ]);
+
+            return response()->json(['success' => false, 'message' => 'Layanan sedang tidak tersedia.'], 503);
+        }
+    }
+
+    public function previewPDF($id)
+    {
+        $inspection = Inspection::find($id);
+
+        if (!$inspection) {
+            return response()->json(['success' => false, 'message' => 'Inspection not found'], 404);
+        }
+
+        if (!in_array($inspection->status, $this->allowedStatusForDownload)) {
+            return response()->json(['success' => false, 'message' => 'Laporan tidak tersedia untuk status inspeksi saat ini.'], 403);
+        }
+
+        try {
+            $response = $this->inspectionReportApi->previewPDF($inspection->inspection_id);
+
+            if ($response->failed()) {
+                return response()->json(['success' => false, 'message' => 'Gagal mengambil dokumen.'], 500);
+            }
+
+            // Ambil license plate dari settings JSON
+            $licensePlate = $inspection->settings['license_plate'] 
+                ?? $inspection->license_plate  // fallback ke kolom langsung
+                ?? 'unknown';
+
+            // Sanitasi untuk nama file (hapus spasi jadi underscore, hapus karakter aneh)
+            $safeName = str_replace(' ', '_', $licensePlate);
+            $safeName = preg_replace('/[^A-Za-z0-9_\-]/', '', $safeName);
+
+            $fileName = 'laporan_inspeksi_' . $safeName . '.pdf';
+            // Hasil: laporan_inspeksi_D_1234_ABC.pdf
+
+            // Inline = buka di browser, bukan download
+            return response($response->body(), 200, [
+                'Content-Type'        => 'application/pdf',
+                'Content-Disposition' => 'inline; filename="' . $fileName . '"',
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('previewPDF failed', [
+                'inspection_id' => $inspection->inspection_id,
+                'error'         => $e->getMessage(),
+            ]);
+
+            return response()->json(['success' => false, 'message' => 'Layanan sedang tidak tersedia.'], 503);
+        }
+    }
 }

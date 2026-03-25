@@ -78,6 +78,8 @@ Route::prefix('app-inspection')->middleware(['auth:sanctum'])->group(function ()
         Route::post('/{id}/estimasi',              [InspectionReportController::class, 'store']);
         Route::put('/{id}/estimasi/{estimasiId}',  [InspectionReportController::class, 'update']);
         Route::delete('/{id}/estimasi/{estimasiId}', [InspectionReportController::class, 'destroy']);
+        Route::get('/{id}/document/download-pdf', [InspectionReportController::class, 'downloadPDF']);
+        Route::get('/{id}/document/preview-pdf', [InspectionReportController::class, 'previewPDF']);
 
     
     });
