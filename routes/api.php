@@ -1,10 +1,12 @@
 <?php
 
 use App\Http\Controllers\Api\AppInspection\Auth\AuthController;
+use App\Http\Controllers\Api\AppInspection\InspectionController;
 use App\Http\Controllers\Api\AppInspection\InspectionReportController;
 use App\Http\Controllers\Api\AppInspection\InspectionVehicleController;
 use App\Http\Controllers\Api\AppInspection\Job\FormInspectionController;
 use App\Http\Controllers\Api\AppInspection\Job\JobController;
+use App\Http\Controllers\Api\CustomerSellerController;
 use App\Http\Controllers\API\VehicleController;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Http\Request;
@@ -18,10 +20,11 @@ Route::middleware(['auth:sanctum', 'inspector'])->group(function () {
     Route::get('/user', [AuthController::class, 'user']);
 });
 
-
-
 Route::prefix('app-inspection')->middleware(['auth:sanctum'])->group(function () {
     
+    Route::post('/store-inspection', [InspectionController::class, 'store']);
+    Route::get('/get-form-templates', [InspectionController::class, 'getFormTemplates']);
+    Route::post('/vehicle/by-plate', [InspectionController::class, 'getByPlate']);
     // Jobs endpoints
     Route::prefix('jobs')->group(function () {
 
@@ -85,20 +88,28 @@ Route::prefix('app-inspection')->middleware(['auth:sanctum'])->group(function ()
     });
 
     Route::prefix('vehicle')->group(function () {
-    // Vehicle selection endpoints (proxy ke Backend B)
-    Route::prefix('selection')->group(function () {
-        Route::get('/brands', [InspectionVehicleController::class, 'getBrands']);
-        Route::get('/models', [InspectionVehicleController::class, 'getModels']);
-        Route::get('/types', [InspectionVehicleController::class, 'getTypes']);
-        Route::get('/years', [InspectionVehicleController::class, 'getYears']);
-        Route::get('/cc', [InspectionVehicleController::class, 'getCc']);
-        Route::get('/transmissions', [InspectionVehicleController::class, 'getTransmissions']);
-        Route::get('/fuel-types', [InspectionVehicleController::class, 'getFuelTypes']);
-        Route::get('/market-periods', [InspectionVehicleController::class, 'getMarketPeriods']);
-        Route::get('/get-detail', [InspectionVehicleController::class, 'getVehicleDetail']);
-        Route::get('/search', [InspectionVehicleController::class, 'searchVehicles']);
+        // Vehicle selection endpoints (proxy ke Backend B)
+        Route::prefix('selection')->group(function () {
+            Route::get('/brands', [InspectionVehicleController::class, 'getBrands']);
+            Route::get('/models', [InspectionVehicleController::class, 'getModels']);
+            Route::get('/types', [InspectionVehicleController::class, 'getTypes']);
+            Route::get('/years', [InspectionVehicleController::class, 'getYears']);
+            Route::get('/cc', [InspectionVehicleController::class, 'getCc']);
+            Route::get('/transmissions', [InspectionVehicleController::class, 'getTransmissions']);
+            Route::get('/fuel-types', [InspectionVehicleController::class, 'getFuelTypes']);
+            Route::get('/market-periods', [InspectionVehicleController::class, 'getMarketPeriods']);
+            Route::get('/get-detail', [InspectionVehicleController::class, 'getVehicleDetail']);
+            Route::get('/search', [InspectionVehicleController::class, 'searchVehicles']);
+        });
+
     });
-});
+
+    Route::prefix('customer-seller')->group(function () {
+        Route::get('/find-by-phone', [CustomerSellerController::class, 'findByPhone']);
+        Route::get('/{id}', [CustomerSellerController::class, 'show']); 
+        Route::post('/', [CustomerSellerController::class, 'store']);
+        Route::put('/{id}', [CustomerSellerController::class, 'update']);
+    });
 });
 
 

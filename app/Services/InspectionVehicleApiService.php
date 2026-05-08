@@ -437,4 +437,28 @@ class InspectionVehicleApiService
             'data'    => $response->json('data') ?? [],
         ];
     }
+
+    /**
+     * Get vehicle by license plate (external API)
+     * GET /api/inspection/check-vehicle?license_plate=XXX
+     */
+    public function getVehicleByPlate(string $plate): array
+    {
+        $url = "{$this->baseUrl}/inspection/check-vehicle";
+
+        $response = Http::withToken($this->token)
+            ->acceptJson()
+            ->timeout(10)
+            ->post($url, [
+                'license_plate' => $plate
+            ]);
+
+        if ($response->failed()) {
+            return $response->json(); // biar tetap sama format error dari backend A
+        }
+
+        // 🔥 RETURN ASLI TANPA DIUBAH
+        return $response->json();
+    }
+
 }

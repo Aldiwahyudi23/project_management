@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -17,6 +18,61 @@ class InspectionApiService
         $this->token   = config('services.inspection_api.token');
     }
 
+        /**
+     * Store inspection data
+     * 
+     * @param array $data
+     * @return array
+     */
+    public function postStoreInspection(array $data): array
+    {
+        $url = "{$this->baseUrl}/inspection/store";
+
+        try {
+            $response = Http::withToken($this->token)
+                ->acceptJson()
+                ->timeout(30)
+                ->post($url, $data);
+
+            if ($response->failed()) {
+                return [
+                    'success' => false,
+                    'message' => 'Failed to store inspection',
+                    'error'   => $response->json(),
+                    'status_code' => $response->status(),
+                ];
+            }
+
+            $responseData = $response->json();
+            
+            // Extract data dari response
+            $inspectionData = $responseData['data'] ?? $responseData['inspection'] ?? $responseData;
+            
+            return [
+                'success' => true,
+                'message' => 'Inspection created successfully',
+                'inspection_id' => $inspectionData['id'] ?? null,  // Ambil id dari data
+                'inspection_code' => $inspectionData['inspection_code'] ?? null, // Ambil inspection_code
+                'data' => $inspectionData,
+                'status_code' => $response->status(),
+            ];
+
+        } catch (RequestException $e) {
+            return [
+                'success' => false,
+                'message' => 'Request timeout or connection error',
+                'error'   => $e->getMessage(),
+            ];
+        } catch (\Exception $e) {
+            return [
+                'success' => false,
+                'message' => 'Unexpected error occurred',
+                'error'   => $e->getMessage(),
+            ];
+        }
+    }
+
+
     //Untuk mendapatkan data Detail Inspection dari API insepction
     public function getInspectionDetail(int $id): array
     {
@@ -28,12 +84,6 @@ class InspectionApiService
             ->get($url);
 
         if ($response->failed()) {
-            // Log::error('inspection API error', [
-            //     'url'    => $url,
-            //     'status' => $response->status(),
-            //     'body'   => $response->body(),
-            // ]);
-
             return [
                 'success' => false,
                 'message' => 'inspection API error',
@@ -470,7 +520,7 @@ public function putInspectionVehicle(
         ];
     }
 
-        public function postGeneratePDF(int $inspectionId): array
+    public function postGeneratePDF(int $inspectionId): array
     {
         $url = "{$this->baseUrl}/inspection/report/data-report/{$inspectionId}/get";
 
@@ -493,6 +543,99 @@ public function putInspectionVehicle(
             'data'    => $response->json('inspection') 
                 ?? $response->json('data') 
                 ?? $response->json(),
+        ];
+    }
+
+ /**
+     * Ambil basic inspection data
+     */
+    public function dataJob(array $inspectionIds): array
+    {
+        $url = "{$this->baseUrl}/inspection/data-jobs";
+
+        $response = Http::withToken($this->token)
+            ->acceptJson()
+            ->timeout(15)
+            ->post($url, [
+                'inspection_ids' => $inspectionIds
+            ]);
+
+        if ($response->failed()) {
+
+            return [
+                'success' => false,
+                'message' => 'Inspection API error',
+                'data' => [],
+                'error' => $response->json(),
+            ];
+        }
+
+        return [
+            'success' => true,
+            'data' => $response->json('data') ?? []
+        ];
+    }
+
+     /**
+     * Search inspection ids
+     */
+    public function searchInspectionIds(string $search): array
+    {
+        $url = "{$this->baseUrl}/inspection/search-jobs";
+
+        $response = Http::withToken($this->token)
+            ->acceptJson()
+            ->timeout(15)
+            ->post($url, [
+                'search' => $search
+            ]);
+
+        if ($response->failed()) {
+
+            return [
+                'success' => false,
+                'inspection_ids' => [],
+                'message' => 'Inspection API search error',
+                'error' => $response->json(),
+            ];
+        }
+
+        return [
+            'success' => true,
+            'inspection_ids' =>
+                $response->json('inspection_ids') ?? []
+        ];
+    }
+
+    /**
+     * Sync inspection status to Backend A
+     */
+    public function updateInspectionStatus(
+        int $inspectionId,
+        string $status
+    ): array {
+
+        $url = "{$this->baseUrl}/inspection/{$inspectionId}/status";
+
+        $response = Http::withToken($this->token)
+            ->acceptJson()
+            ->timeout(15)
+            ->patch($url, [
+                'status' => $status
+            ]);
+
+        if ($response->failed()) {
+
+            return [
+                'success' => false,
+                'message' => 'Failed sync inspection status',
+                'error' => $response->json()
+            ];
+        }
+
+        return [
+            'success' => true,
+            'data' => $response->json('data')
         ];
     }
 }

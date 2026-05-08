@@ -43,7 +43,7 @@ class JobController extends Controller
     private function isTravelFlowEnabled(): bool
     {
         // 🔥 sementara manual
-        return false; 
+        return false; // ganti true untuk test dengan travel flow, ganti false untuk test tanpa travel flow
         // ganti false untuk test tanpa travel flow
     }
 
@@ -92,13 +92,11 @@ class JobController extends Controller
                 'on_the_way',
                 'arrived',
                 'in_progress',
-                'paused'
             ];
         }
 
         return [
             'in_progress',
-            'paused'
         ];
     }
     private function hasActiveJob($inspectorId, $excludeId = null): bool
@@ -127,18 +125,20 @@ class JobController extends Controller
                 'on_the_way' => ['arrived', 'pending', 'cancelled'],
                 'arrived' => ['in_progress', 'pending','cancelled'],
                 'pending' => ['on_the_way', 'cancelled'], 
-                'in_progress' => ['in_progress', 'rejected'],
+                'in_progress' => ['in_progress','paused' ,'rejected'],
                 'paused' => ['in_progress','rejected'],
                 'revision' => ['in_progress'],
+                'under_review' => ['revision'],
             ];
         }
 
         return [
             'draft' => ['accepted','cancelled'],
             'accepted' => ['in_progress', 'cancelled'],
-            'in_progress' => ['in_progress', 'rejected'],
+            'in_progress' => ['in_progress', 'paused','rejected'],
             'paused' => ['in_progress','rejected'],
             'revision' => ['in_progress'],
+            'under_review' => ['revision'],
         ];
     }
 
@@ -175,43 +175,105 @@ class JobController extends Controller
         ]);
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | MERGE INSPECTION DATA FROM BACKEND A
+    |--------------------------------------------------------------------------
+    */
+    private function enrichJobsWithInspectionData($jobs)
+    {
+        // 🔹 Ambil inspection ids
+        $inspectionIds = collect($jobs)
+            ->pluck('inspection_id')
+            ->filter()
+            ->unique()
+            ->values()
+            ->toArray();
+
+        // 🔹 Tidak ada data
+        if (empty($inspectionIds)) {
+            return collect($jobs);
+        }
+
+        // 🔹 Call Backend A
+        $inspectionResponse = $this->inspectionApi
+            ->dataJob($inspectionIds);
+
+        // 🔹 Mapping inspection
+        $inspectionMap = collect(
+            $inspectionResponse['data'] ?? []
+        )->keyBy('id');
+
+        // 🔹 Merge data
+        return collect($jobs)->map(function ($job) use ($inspectionMap) {
+
+            $inspection = $inspectionMap[$job->inspection_id] ?? null;
+
+            $job->license_plate = $inspection['license_plate'] ?? null;
+            $job->vehicle_name = $inspection['vehicle_name'] ?? null;
+
+            return $job;
+        });
+    }
+
     /**
      * GET /api/app-inspection/jobs/draft
-     * Mendapatkan list inspeksi dengan status draft
      */
     public function getDraftJobs(Request $request)
     {
         try {
+
             $user = Auth::user();
 
-            $query = Inspection::
-            // where('inspector_id', $user->id)
-            //     ->
-                whereIn('status', self::STATUS_DRAFT);
+            $query = Inspection::query()
+                ->where('inspector_id', $user->id)
+                ->whereIn('status', self::STATUS_DRAFT);
 
             /*
             |--------------------------------------------------------------------------
-            | 🔍 SEARCH (vehicle_name & license_plate dari settings JSON)
+            | SEARCH VIA BACKEND A
             |--------------------------------------------------------------------------
             */
             if ($request->filled('search')) {
-                $search = $request->search;
 
-                $query->where(function ($q) use ($search) {
-                    $q->where('settings->vehicle_name', 'like', "%{$search}%")
-                    ->orWhere('settings->license_plate', 'like', "%{$search}%");
-                });
+                $searchResponse = $this->inspectionApi
+                    ->searchInspectionIds($request->search);
+
+                $inspectionIds = $searchResponse['inspection_ids'] ?? [];
+
+                if (empty($inspectionIds)) {
+
+                    $query->whereRaw('1 = 0');
+
+                } else {
+
+                    $query->whereIn(
+                        'inspection_id',
+                        $inspectionIds
+                    );
+                }
             }
 
             /*
             |--------------------------------------------------------------------------
-            | 🔄 Sorting
+            | SORTING
             |--------------------------------------------------------------------------
             */
-            $sortField = $request->get('sort_field', 'inspection_date');
-            $sortOrder = $request->get('sort_order', 'asc');
+            $sortField = $request->get(
+                'sort_field',
+                'inspection_date'
+            );
 
-            $allowedSortFields = ['inspection_date', 'created_at', 'status'];
+            $sortOrder = $request->get(
+                'sort_order',
+                'asc'
+            );
+
+            $allowedSortFields = [
+                'inspection_date',
+                'created_at',
+                'status'
+            ];
 
             if (!in_array($sortField, $allowedSortFields)) {
                 $sortField = 'inspection_date';
@@ -221,16 +283,30 @@ class JobController extends Controller
 
             /*
             |--------------------------------------------------------------------------
-            | 📄 Pagination
+            | PAGINATION
             |--------------------------------------------------------------------------
             */
             $perPage = $request->get('per_page', 10);
+
             $jobs = $query->paginate($perPage);
+
+            /*
+            |--------------------------------------------------------------------------
+            | MERGE DATA BACKEND A
+            |--------------------------------------------------------------------------
+            */
+            $jobsCollection = $this->enrichJobsWithInspectionData(
+                $jobs->items()
+            );
 
             return response()->json([
                 'status' => 'success',
                 'message' => 'Draft jobs retrieved successfully',
-                'data' => JobListResource::collection($jobs),
+
+                'data' => JobListResource::collection(
+                    $jobsCollection
+                ),
+
                 'pagination' => [
                     'current_page' => $jobs->currentPage(),
                     'per_page' => $jobs->perPage(),
@@ -240,6 +316,7 @@ class JobController extends Controller
             ]);
 
         } catch (\Exception $e) {
+
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to retrieve draft jobs',
@@ -250,74 +327,125 @@ class JobController extends Controller
 
     /**
      * GET /api/app-inspection/jobs/process
-     * Mendapatkan list inspeksi dengan status process
      */
     public function getProcessJobs(Request $request)
     {
         try {
+
             $user = Auth::user();
-            
-            $query = Inspection::where('inspector_id', $user->id)
+
+            $query = Inspection::query()
+                ->where('inspector_id', $user->id)
                 ->whereIn('status', $this->getProcessStatuses());
-            
+
             /*
             |--------------------------------------------------------------------------
-            | 🔍 SEARCH (vehicle_name & license_plate dari settings JSON)
+            | SEARCH VIA BACKEND A
             |--------------------------------------------------------------------------
             */
             if ($request->filled('search')) {
-                $search = $request->search;
 
-                $query->where(function ($q) use ($search) {
-                    $q->where('settings->vehicle_name', 'like', "%{$search}%")
-                    ->orWhere('settings->license_plate', 'like', "%{$search}%");
-                });
+                $searchResponse = $this->inspectionApi
+                    ->searchInspectionIds($request->search);
+
+                $inspectionIds = $searchResponse['inspection_ids'] ?? [];
+
+                if (empty($inspectionIds)) {
+
+                    $query->whereRaw('1 = 0');
+
+                } else {
+
+                    $query->whereIn(
+                        'inspection_id',
+                        $inspectionIds
+                    );
+                }
             }
-            
-            // Filter by specific status
-            if ($request->has('status') && in_array($request->status, $this->getProcessStatuses())) {
+
+            /*
+            |--------------------------------------------------------------------------
+            | FILTER STATUS
+            |--------------------------------------------------------------------------
+            */
+            if (
+                $request->has('status') &&
+                in_array($request->status, $this->getProcessStatuses())
+            ) {
                 $query->where('status', $request->status);
             }
-            
-            // Sorting
-            $sortField = $request->get('sort_field', 'inspection_date');
-            $sortOrder = $request->get('sort_order', 'asc');
+
+            /*
+            |--------------------------------------------------------------------------
+            | SORTING
+            |--------------------------------------------------------------------------
+            */
+            $sortField = $request->get(
+                'sort_field',
+                'inspection_date'
+            );
+
+            $sortOrder = $request->get(
+                'sort_order',
+                'asc'
+            );
+
             $query->orderBy($sortField, $sortOrder);
-            
+
+            /*
+            |--------------------------------------------------------------------------
+            | PAGINATION
+            |--------------------------------------------------------------------------
+            */
             $perPage = $request->get('per_page', 10);
+
             $jobs = $query->paginate($perPage);
 
-            
-            // Ambil sample inspection untuk mendapatkan status yang tersedia
-            $sampleInspection = Inspection::where('inspector_id', $user->id)
-                ->whereIn('status', $this->getProcessStatuses())
-                ->first();
-            
+            /*
+            |--------------------------------------------------------------------------
+            | MERGE DATA BACKEND A
+            |--------------------------------------------------------------------------
+            */
+            $jobsCollection = $this->enrichJobsWithInspectionData(
+                $jobs->items()
+            );
+
             return response()->json([
                 'status' => 'success',
                 'message' => 'Process jobs retrieved successfully',
-                'data' => JobListResource::collection($jobs),
+
+                'data' => JobListResource::collection(
+                    $jobsCollection
+                ),
+
                 'pagination' => [
                     'current_page' => $jobs->currentPage(),
                     'per_page' => $jobs->perPage(),
                     'total' => $jobs->total(),
                     'last_page' => $jobs->lastPage(),
                 ],
+
                 'filters' => [
-                    'available_statuses' => array_map(function($status) use ($sampleInspection) {
-                        // Buat instance inspection sementara untuk mendapatkan label & color
-                        $tempInspection = new Inspection(['status' => $status]);
-                        
-                        return [
-                            'value' => $status,
-                            'label' => $tempInspection->status_label,
-                            'color' => $tempInspection->status_color,
-                        ];
-                    }, $this->getProcessStatuses())
+                    'available_statuses' => array_map(
+                        function ($status) {
+
+                            $tempInspection = new Inspection([
+                                'status' => $status
+                            ]);
+
+                            return [
+                                'value' => $status,
+                                'label' => $tempInspection->status_label,
+                                'color' => $tempInspection->status_color,
+                            ];
+                        },
+                        $this->getProcessStatuses()
+                    )
                 ]
             ]);
-            
+
         } catch (\Exception $e) {
+
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to retrieve process jobs',
@@ -328,64 +456,95 @@ class JobController extends Controller
 
     /**
      * GET /api/app-inspection/jobs/completed
-     * Mendapatkan list inspeksi dengan status completed
-     * (dengan filter tahun, bulan, status, dan search)
      */
     public function getCompletedJobs(Request $request)
     {
         try {
+
             $user = Auth::user();
 
             /*
             |--------------------------------------------------------------------------
-            | ✅ Validation
+            | VALIDATION
             |--------------------------------------------------------------------------
             */
             $validator = Validator::make($request->all(), [
-                'year'   => 'nullable|integer|min:2020|max:' . date('Y'),
-                'month'  => 'nullable|integer|min:1|max:12',
-                'status' => 'nullable|in:' . implode(',', self::STATUS_COMPLETED),
+                'year' => 'nullable|integer|min:2020|max:' . date('Y'),
+                'month' => 'nullable|integer|min:1|max:12',
+                'status' => 'nullable|in:' .
+                    implode(',', self::STATUS_COMPLETED),
             ]);
 
             if ($validator->fails()) {
+
                 return response()->json([
-                    'status'  => 'error',
+                    'status' => 'error',
                     'message' => 'Validation failed',
-                    'errors'  => $validator->errors()
+                    'errors' => $validator->errors()
                 ], 422);
             }
 
             /*
             |--------------------------------------------------------------------------
-            | 🔎 Base Query
+            | BASE QUERY
             |--------------------------------------------------------------------------
             */
-            $query = Inspection::
-            // where('inspector_id', $user->id)
-            //     ->
-                whereIn('status', self::STATUS_COMPLETED);
+            $query = Inspection::query()
+                ->where('inspector_id', $user->id)
+                ->whereIn('status', self::STATUS_COMPLETED);
 
             /*
             |--------------------------------------------------------------------------
-            | 📅 Filter Tahun
+            | SEARCH VIA BACKEND A
+            |--------------------------------------------------------------------------
+            */
+            if ($request->filled('search')) {
+
+                $searchResponse = $this->inspectionApi
+                    ->searchInspectionIds($request->search);
+
+                $inspectionIds = $searchResponse['inspection_ids'] ?? [];
+
+                if (empty($inspectionIds)) {
+
+                    $query->whereRaw('1 = 0');
+
+                } else {
+
+                    $query->whereIn(
+                        'inspection_id',
+                        $inspectionIds
+                    );
+                }
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | FILTER YEAR
             |--------------------------------------------------------------------------
             */
             if ($request->filled('year')) {
-                $query->whereYear('inspection_date', $request->year);
+                $query->whereYear(
+                    'inspection_date',
+                    $request->year
+                );
             }
 
             /*
             |--------------------------------------------------------------------------
-            | 📆 Filter Bulan
+            | FILTER MONTH
             |--------------------------------------------------------------------------
             */
             if ($request->filled('month')) {
-                $query->whereMonth('inspection_date', $request->month);
+                $query->whereMonth(
+                    'inspection_date',
+                    $request->month
+                );
             }
 
             /*
             |--------------------------------------------------------------------------
-            | 📌 Filter Status Specific
+            | FILTER STATUS
             |--------------------------------------------------------------------------
             */
             if ($request->filled('status')) {
@@ -394,27 +553,24 @@ class JobController extends Controller
 
             /*
             |--------------------------------------------------------------------------
-            | 🔍 Search dari JSON settings
+            | SORTING
             |--------------------------------------------------------------------------
             */
-            if ($request->filled('search')) {
-                $search = $request->search;
+            $sortField = $request->get(
+                'sort_field',
+                'inspection_date'
+            );
 
-                $query->where(function ($q) use ($search) {
-                    $q->where('settings->vehicle_name', 'like', "%{$search}%")
-                    ->orWhere('settings->license_plate', 'like', "%{$search}%");
-                });
-            }
+            $sortOrder = $request->get(
+                'sort_order',
+                'desc'
+            );
 
-            /*
-            |--------------------------------------------------------------------------
-            | 🔄 Sorting (default terbaru)
-            |--------------------------------------------------------------------------
-            */
-            $sortField = $request->get('sort_field', 'inspection_date');
-            $sortOrder = $request->get('sort_order', 'desc');
-
-            $allowedSortFields = ['inspection_date', 'created_at', 'status'];
+            $allowedSortFields = [
+                'inspection_date',
+                'created_at',
+                'status'
+            ];
 
             if (!in_array($sortField, $allowedSortFields)) {
                 $sortField = 'inspection_date';
@@ -424,62 +580,81 @@ class JobController extends Controller
 
             /*
             |--------------------------------------------------------------------------
-            | 📄 Pagination
+            | PAGINATION
             |--------------------------------------------------------------------------
             */
             $perPage = $request->get('per_page', 10);
+
             $jobs = $query->paginate($perPage);
 
             /*
             |--------------------------------------------------------------------------
-            | 📊 Statistics
+            | MERGE DATA BACKEND A
             |--------------------------------------------------------------------------
             */
-            $stats = $this->getCompletedJobsStats(
-                $user->id,
-                $request->year ?? date('Y'),
-                $request->month
+            $jobsCollection = $this->enrichJobsWithInspectionData(
+                $jobs->items()
             );
 
             /*
             |--------------------------------------------------------------------------
-            | 🎛 Filters Info
+            | FILTERS
             |--------------------------------------------------------------------------
             */
-            $availableStatuses = array_map(function ($status) {
-                $tempInspection = new Inspection(['status' => $status]);
+            $availableStatuses = array_map(
+                function ($status) {
 
-                return [
-                    'value' => $status,
-                    'label' => $tempInspection->status_label,
-                    'color' => $tempInspection->status_color,
-                ];
-            }, self::STATUS_COMPLETED);
+                    $tempInspection = new Inspection([
+                        'status' => $status
+                    ]);
+
+                    return [
+                        'value' => $status,
+                        'label' => $tempInspection->status_label,
+                        'color' => $tempInspection->status_color,
+                    ];
+                },
+                self::STATUS_COMPLETED
+            );
 
             return response()->json([
-                'status'  => 'success',
+                'status' => 'success',
                 'message' => 'Completed jobs retrieved successfully',
-                'data'    => JobListResource::collection($jobs),
+
+                'data' => JobListResource::collection(
+                    $jobsCollection
+                ),
+
                 'pagination' => [
                     'current_page' => $jobs->currentPage(),
-                    'per_page'     => $jobs->perPage(),
-                    'total'        => $jobs->total(),
-                    'last_page'    => $jobs->lastPage(),
+                    'per_page' => $jobs->perPage(),
+                    'total' => $jobs->total(),
+                    'last_page' => $jobs->lastPage(),
                 ],
-                'statistics' => $stats,
+
+                'statistics' => $this->getCompletedJobsStats(
+                    $user->id,
+                    $request->year ?? date('Y'),
+                    $request->month
+                ),
+
                 'filters' => [
-                    'year'               => $request->year,
-                    'month'              => $request->month,
+                    'year' => $request->year,
+                    'month' => $request->month,
                     'available_statuses' => $availableStatuses,
-                    'available_months'   => $this->getAvailableMonths($user->id, $request->year),
+                    'available_months' => $this->getAvailableMonths(
+                        $user->id,
+                        $request->year ?? date('Y')
+                    ),
                 ]
             ]);
 
         } catch (\Exception $e) {
+
             return response()->json([
-                'status'  => 'error',
+                'status' => 'error',
                 'message' => 'Failed to retrieve completed jobs',
-                'error'   => $e->getMessage()
+                'error' => $e->getMessage()
             ], 500);
         }
     }
@@ -521,11 +696,11 @@ class JobController extends Controller
 
             // 🔹 Pisahkan menjadi dua kategori
             $cancelActions = array_filter($availableTransitions, function($status) {
-                return in_array($status, ['cancelled', 'pending', 'rejected']);
+                return in_array($status, ['cancelled', 'pending', 'rejected', 'paused','revision']);
             });
 
             $nextStepActions = array_filter($availableTransitions, function($status) {
-                return !in_array($status, ['cancelled', 'pending', 'rejected']);
+                return !in_array($status, ['cancelled', 'pending', 'rejected', 'paused','revision']);
             });
 
             return response()->json([
@@ -561,6 +736,7 @@ class JobController extends Controller
         ]);
 
         if ($validator->fails()) {
+
             return response()->json([
                 'status' => 'error',
                 'errors' => $validator->errors()
@@ -571,6 +747,7 @@ class JobController extends Controller
             ->find($id);
 
         if (!$inspection) {
+
             return response()->json([
                 'status' => 'error',
                 'message' => 'Inspection not found'
@@ -580,17 +757,33 @@ class JobController extends Controller
         $currentStatus = $inspection->status;
         $newStatus = $request->status;
 
-        // 🔥 VALIDASI FLOW
+        /*
+        |--------------------------------------------------------------------------
+        | VALIDASI FLOW
+        |--------------------------------------------------------------------------
+        */
         if (!$this->canTransition($currentStatus, $newStatus)) {
+
             return response()->json([
                 'status' => 'error',
                 'message' => "Tidak dapat mengubah status dari {$currentStatus} ke {$newStatus}"
             ], 400);
         }
 
-        // 🔥 VALIDASI ACTIVE LOCK
+        /*
+        |--------------------------------------------------------------------------
+        | VALIDASI ACTIVE LOCK
+        |--------------------------------------------------------------------------
+        */
         if (in_array($newStatus, $this->getActiveStatuses())) {
-            if ($this->hasActiveJob($inspection->inspector_id, $inspection->id)) {
+
+            if (
+                $this->hasActiveJob(
+                    $inspection->inspector_id,
+                    $inspection->id
+                )
+            ) {
+
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Masih ada inspeksi aktif. Silakan pending-kan inspeksi lain terlebih dahulu.'
@@ -598,7 +791,11 @@ class JobController extends Controller
             }
         }
 
-        // 🔥 UPDATE
+        /*
+        |--------------------------------------------------------------------------
+        | UPDATE LOCAL BACKEND B
+        |--------------------------------------------------------------------------
+        */
         $inspection->status = $newStatus;
 
         if ($request->filled('notes')) {
@@ -606,17 +803,73 @@ class JobController extends Controller
         }
 
         $inspection->save();
+
+        /*
+        |--------------------------------------------------------------------------
+        | SYNC STATUS TO BACKEND A
+        |--------------------------------------------------------------------------
+        */
+        $syncableStatuses = [
+            'draft',
+            'in_progress',
+            'paused',
+            'under_review',
+            'approved',
+            'rejected',
+            'revision',
+            'completed',
+            'cancelled',
+        ];
+
+        if (
+            in_array($newStatus, $syncableStatuses) &&
+            $inspection->inspection_id
+        ) {
+
+            $syncResponse = $this->inspectionApi
+                ->updateInspectionStatus(
+                    $inspection->inspection_id,
+                    $newStatus
+                );
+
+            /*
+            |--------------------------------------------------------------------------
+            | OPTIONAL STRICT MODE
+            |--------------------------------------------------------------------------
+            | Kalau sync gagal -> rollback status backend B
+            */
+
+            if (!$syncResponse['success']) {
+
+                // rollback status lama
+                $inspection->update([
+                    'status' => $currentStatus
+                ]);
+
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Gagal sinkronisasi status ke Backend A',
+                    'sync_error' => $syncResponse['error'] ?? null
+                ], 500);
+            }
+        }
+
         $inspection->refresh();
 
         return response()->json([
             'status' => 'success',
             'message' => 'Status berhasil diperbarui',
+
             'data' => [
                 'id' => $inspection->id,
+                'inspection_id' => $inspection->inspection_id,
+
                 'status' => $inspection->status,
                 'status_label' => $inspection->status_label,
                 'status_color' => $inspection->status_color,
-                'updated_at' => $inspection->updated_at->format('Y-m-d H:i:s')
+
+                'updated_at' => $inspection->updated_at
+                    ->format('Y-m-d H:i:s')
             ]
         ]);
     }

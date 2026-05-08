@@ -27,102 +27,174 @@ class FormInspectionController extends Controller
     public function getFormInspection($id)
     {
         try {
-            // Validasi user login
+
+            /*
+            |--------------------------------------------------------------------------
+            | AUTH
+            |--------------------------------------------------------------------------
+            */
             $user = Auth::user();
+
             if (!$user) {
+
                 return response()->json([
                     'success' => false,
                     'message' => 'User tidak terautentikasi'
                 ], 401);
             }
 
-            // Cari data inspeksi lokal
-            $inspection = Inspection::
-                // where('inspector_id', $user->id)
-                // ->
-                find($id);
+            /*
+            |--------------------------------------------------------------------------
+            | GET INSPECTION
+            |--------------------------------------------------------------------------
+            */
+            $inspection = Inspection::find($id);
 
-            // Cek apakah inspeksi ditemukan
             if (!$inspection) {
+
                 return response()->json([
                     'success' => false,
                     'message' => 'Data inspeksi tidak ditemukan'
                 ], 404);
             }
 
-            // Validasi status - hanya bisa mulai jika status draft atau accepted
-            $allowedStatuses = ['accepted', 'arrived','in_progress', 'revision', 'paused'];
+            /*
+            |--------------------------------------------------------------------------
+            | VALIDASI STATUS
+            |--------------------------------------------------------------------------
+            */
+            $allowedStatuses = [
+                'accepted',
+                'arrived',
+                'in_progress',
+                'revision',
+                'paused'
+            ];
+
             if (!in_array($inspection->status, $allowedStatuses)) {
+
                 return response()->json([
                     'success' => false,
                     'message' => 'Tidak dapat memulai inspeksi dengan status ' . $inspection->status_label
                 ], 400);
             }
 
-            // Panggil API eksternal untuk mendapatkan form template
-            $result = $this->inspectionApi->getFormInspection($inspection->inspection_id);
+            $hasRunningInspection = Inspection::query()
+                ->where('inspector_id', $user->id)
 
-            // Cek response dari API eksternal
-            if (!isset($result['success']) || !$result['success']) {
-                $errorMessage = $result['message'] ?? 'Gagal mengambil form inspeksi';
-                $errorDetail = $result['error'] ?? null;
-                
-                // // Log error untuk debugging
-                // \Log::error('Failed to get form inspection from external API', [
-                //     'inspection_id' => $inspection->inspection_id,
-                //     'error' => $errorDetail
-                // ]);
+                // jangan cek inspection yang sedang dibuka sekarang
+                ->where('id', '!=', $inspection->id)
+
+                ->whereIn('status', [
+                    'in_progress',
+                    // 'revision',
+                ])
+                ->exists();
+
+            if ($hasRunningInspection) {
 
                 return response()->json([
                     'success' => false,
-                    'message' => $errorMessage,
-                    'debug' => config('app.debug') ? $errorDetail : null
+                    'message' => 'Masih ada inspeksi yang sedang berjalan. Selesaikan atau lanjutkan inspeksi sebelumnya terlebih dahulu.'
+                ], 400);
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | GET FORM FROM BACKEND A
+            |--------------------------------------------------------------------------
+            */
+            $result = $this->inspectionApi
+                ->getFormInspection($inspection->inspection_id);
+
+            if (!isset($result['success']) || !$result['success']) {
+
+                return response()->json([
+                    'success' => false,
+                    'message' => $result['message']
+                        ?? 'Gagal mengambil form inspeksi',
+                    'debug' => config('app.debug')
+                        ? ($result['error'] ?? null)
+                        : null
                 ], 500);
             }
 
-            // Update status inspeksi menjadi 'in_progress' jika berhasil mendapatkan form
-            if ($inspection->status === 'accepted' || $inspection->status === 'arrived' || $inspection->status === 'revision' || $inspection->status === 'paused' ) {
+            /*
+            |--------------------------------------------------------------------------
+            | AUTO START INSPECTION
+            |--------------------------------------------------------------------------
+            */
+            if (
+                in_array(
+                    $inspection->status,
+                    ['accepted', 'arrived', 'revision', 'paused']
+                )
+            ) {
+
+                /*
+                |--------------------------------------------------------------------------
+                | UPDATE LOCAL STATUS (BACKEND B)
+                |--------------------------------------------------------------------------
+                */
                 $inspection->status = 'in_progress';
                 $inspection->save();
-                
-                // // Log aktivitas
-                // \Log::info('Inspection started', [
-                //     'inspection_id' => $inspection->id,
-                //     'external_id' => $inspection->inspection_id,
-                //     'user_id' => $user->id
-                // ]);
+
+                /*
+                |--------------------------------------------------------------------------
+                | SYNC STATUS TO BACKEND A
+                |--------------------------------------------------------------------------
+                */
+                if ($inspection->inspection_id) {
+
+                    $syncResponse = $this->inspectionApi
+                        ->updateInspectionStatus(
+                            $inspection->inspection_id,
+                            'in_progress'
+                        );
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | OPTIONAL LOG
+                    |--------------------------------------------------------------------------
+                    */
+                    // \Log::info('SYNC STATUS TO BACKEND A', [
+                    //     'inspection_id' => $inspection->inspection_id,
+                    //     'response' => $syncResponse
+                    // ]);
+                }
             }
 
-            // Return success response dengan data form
+            /*
+            |--------------------------------------------------------------------------
+            | RESPONSE
+            |--------------------------------------------------------------------------
+            */
             return response()->json([
                 'success' => true,
                 'message' => 'Form inspeksi berhasil diambil',
+
                 'data' => [
+
                     'inspection' => [
                         'id' => $inspection->id,
                         'inspection_id' => $inspection->inspection_id,
                         'status' => $inspection->status,
                         'status_label' => $inspection->status_label,
-                        // 'status_color' => $inspection->status_color,
                         'inspection_date' => $inspection->inspection_date,
-                        // 'customer_id' => $inspection->customer_id,
-                        // 'reference' => $inspection->reference,
                     ],
+
                     'form' => $result['data'] ?? $result
                 ]
             ]);
 
         } catch (\Exception $e) {
-            // // Log error untuk debugging
-            // \Log::error('Exception in getFormInspection: ' . $e->getMessage(), [
-            //     'id' => $id,
-            //     'trace' => $e->getTraceAsString()
-            // ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Terjadi kesalahan saat mengambil form inspeksi',
-                'debug' => config('app.debug') ? $e->getMessage() : null
+                'debug' => config('app.debug')
+                    ? $e->getMessage()
+                    : null
             ], 500);
         }
     }
@@ -261,47 +333,47 @@ class FormInspectionController extends Controller
 
         }
     }
-public function saveInspectionVehicle(Request $request, int $inspectionId)
-{
-    $request->validate([
-        'license_plate' => 'required|string|max:20',
-        'vehicle_name'  => 'required|string|max:255',
-        'vehicle_id'    => 'required|integer'
-    ]);
-
-    try {
-
-        $result = $this->inspectionApi->putInspectionVehicle(
-            $inspectionId,
-            $request->license_plate,
-            (int) $request->vehicle_id,
-            $request->vehicle_name
-        );
-
-        if (!$result['success']) {
-            return response()->json([
-                'success' => false,
-                'message' => $result['message'] ?? 'Failed to update vehicle',
-                'error'   => $result['error'] ?? null
-            ], 500);
-        }
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Vehicle updated successfully',
-            // 'data'    => $result['data']
+    public function saveInspectionVehicle(Request $request, int $inspectionId)
+    {
+        $request->validate([
+            'license_plate' => 'required|string|max:20',
+            'vehicle_name'  => 'required|string|max:255',
+            'vehicle_id'    => 'required|integer'
         ]);
 
-    } catch (\Throwable $e) {
+        try {
 
-        return response()->json([
-            'success' => false,
-            'message' => 'Unexpected server error',
-            'error'   => $e->getMessage()
-        ], 500);
+            $result = $this->inspectionApi->putInspectionVehicle(
+                $inspectionId,
+                $request->license_plate,
+                (int) $request->vehicle_id,
+                $request->vehicle_name
+            );
 
+            if (!$result['success']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $result['message'] ?? 'Failed to update vehicle',
+                    'error'   => $result['error'] ?? null
+                ], 500);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Vehicle updated successfully',
+                // 'data'    => $result['data']
+            ]);
+
+        } catch (\Throwable $e) {
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Unexpected server error',
+                'error'   => $e->getMessage()
+            ], 500);
+
+        }
     }
-}
 // ─────────────────────────────────────────────────────────────
     // ENTRY POINT
     // ─────────────────────────────────────────────────────────────
