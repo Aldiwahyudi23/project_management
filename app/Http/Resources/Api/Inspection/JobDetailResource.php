@@ -2,7 +2,9 @@
 
 namespace App\Http\Resources\Api\Inspection;
 
+use App\Models\MasterData\UserInspectionTemplate;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Facades\Auth;
 
 class JobDetailResource extends JsonResource
 {
@@ -73,7 +75,150 @@ class JobDetailResource extends JsonResource
                 'origin'  => $vehicle['origin'] ?? null,
                 'market_period'  => $vehicle['market_period'] ?? null,
             ],
-            'template' => $external['template'] ?? null,
+            'template_form' => $this->resolveTemplateForm($external),
+
+            'template_report' => $this->resolveTemplateReport($external),
         ];
+    }
+
+/**
+ * Resolve template form
+ */
+protected function resolveTemplateForm($external)
+{
+    $template = $external['template_form'] ?? null;
+    $isEditable = $this->isFormTemplateEditable();
+    
+    // Ambil semua template user
+    $userTemplates = UserInspectionTemplate::query()
+        ->where('user_id',  Auth::id())
+        ->where('template_type', UserInspectionTemplate::TYPE_FORM)
+        ->where('is_active', true)
+        ->get();
+
+    // Jika tidak ada data dari external dan status tidak editable
+    if (!$template && !$isEditable) {
+        return null;
+    }
+
+    $response = [];
+
+    // Handle selected
+    if ($template && $userTemplate = $userTemplates->firstWhere('template_id', $template['id'])) {
+        // User memiliki template yang dipilih
+        $response['selected'] = [
+            'id' => $template['id'],
+            'name' => $userTemplate->name,
+        ];
+    } elseif ($template) {
+        // Ada data dari external tapi user tidak punya template tersebut
+        $response['selected'] = [
+            'id' => $template['id'],
+            'name' => $template['name'] ?? null,
+        ];
+    } else {
+        // Tidak ada data dari external, biarkan null
+        $response['selected'] = null;
+    }
+
+    $response['is_editable'] = $isEditable;
+
+    // Tampilkan options hanya jika editable dan user memiliki template
+    if ($isEditable && $userTemplates->isNotEmpty()) {
+        $response['options'] = $userTemplates->map(function ($item) {
+            return [
+                'id' => $item->template_id,
+                'name' => $item->name,
+            ];
+        })->values();
+    }
+
+    return $response;
+}
+
+/**
+ * Resolve template report
+ */
+protected function resolveTemplateReport($external)
+{
+    $template = $external['template_report'] ?? null;
+    $isEditable = $this->isReportTemplateEditable();
+    
+    // Ambil semua template user
+    $userTemplates = UserInspectionTemplate::query()
+        ->where('user_id', Auth::id())
+        ->where('template_type', UserInspectionTemplate::TYPE_REPORT)
+        ->where('is_active', true)
+        ->get();
+
+    // Jika tidak ada data dari external dan status tidak editable
+    if (!$template && !$isEditable) {
+        return null;
+    }
+
+    $response = [];
+
+    // Handle selected
+    if ($template && $userTemplate = $userTemplates->firstWhere('template_id', $template['id'])) {
+        // User memiliki template yang dipilih
+        $response['selected'] = [
+            'id' => $template['id'],
+            'name' => $userTemplate->name,
+        ];
+    } elseif ($template) {
+        // Ada data dari external tapi user tidak punya template tersebut
+        $response['selected'] = [
+            'id' => $template['id'],
+            'name' => $template['name'] ?? null,
+        ];
+    } else {
+        // Tidak ada data dari external, biarkan null
+        $response['selected'] = null;
+    }
+
+    $response['is_editable'] = $isEditable;
+
+    // Tampilkan options hanya jika editable dan user memiliki template
+    if ($isEditable && $userTemplates->isNotEmpty()) {
+        $response['options'] = $userTemplates->map(function ($item) {
+            return [
+                'id' => $item->template_id,
+                'name' => $item->name,
+            ];
+        })->values();
+    }
+
+    return $response;
+}
+
+    /**
+     * Check form template editable
+     */
+    protected function isFormTemplateEditable(): bool
+    {
+        return in_array($this->status, [
+            'draft',
+            'pending',
+            'accepted',
+            'on_the_way',
+            'arrived',
+            'in_progress',
+        ]);
+    }
+
+    /**
+     * Check report template editable
+     */
+    protected function isReportTemplateEditable(): bool
+    {
+        return in_array($this->status, [
+            'draft',
+            'pending',
+            'accepted',
+            'on_the_way',
+            'arrived',
+            'in_progress',
+            'under_review',
+        ]);
     }
 }

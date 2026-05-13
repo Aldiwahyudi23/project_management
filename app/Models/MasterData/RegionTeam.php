@@ -40,4 +40,13 @@ class RegionTeam extends Model
     {
         return $this->belongsTo(\App\Models\User::class);
     }
+
+    public function inspectionTemplates()
+    {
+        return $this->hasMany(
+            UserInspectionTemplate::class,
+            'user_id',
+            'user_id'
+        );
+    }
 }

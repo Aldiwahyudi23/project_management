@@ -212,15 +212,34 @@ class InspectionController extends Controller
             }
 
             // ========================================
+            // 🔥 GET DEFAULT REPORT TEMPLATE
+            // ========================================
+            $defaultReportTemplate = UserInspectionTemplate::query()
+                ->where('user_id', $user->id)
+                ->where('template_type', 'report')
+                ->where('is_default', true)
+                ->where('is_active', true)
+                ->first();
+
+            // jika tidak ada → null
+            $reportTemplateId = $defaultReportTemplate?->template_id;
+
+            // ========================================
             // 🔥 STEP 3: PREPARE & HIT INSPECTION BACKEND
             // ========================================
             $inspectionBackendData = [
-                'license_plate'   => $request->license_plate,
-                'vehicle_name'    => $request->vehicle_name,
-                'vehicle_id'      => $request->vehicle_id,
-                'template_id'     => $request->template_id,
-                'inspection_date' => $inspectionDate,
-                'status'          => $status_external,
+                'license_plate'      => $request->license_plate,
+                'vehicle_name'       => $request->vehicle_name,
+                'vehicle_id'         => $request->vehicle_id,
+
+                // form template
+                'template_id'        => $request->template_id,
+
+                // report template default inspector
+                'report_template_id' => $reportTemplateId,
+
+                'inspection_date'    => $inspectionDate,
+                'status'             => $status_external,
             ];
 
             $result = $this->inspectionApi->postStoreInspection($inspectionBackendData);
@@ -408,5 +427,109 @@ class InspectionController extends Controller
         // RETURN TANPA UBAH STRUKTUR
         return response()->json($result);
     }
+
+
+    /**
+     * Update inspection form template
+     */
+    public function updateInspectionTemplate(Request $request, $id)
+    {
+        $request->validate([
+            'template_id' => 'required|integer',
+        ]);
+
+        // Ambil inspection lokal Backend B
+        $inspection = Inspection::find($id);
+
+        if (!$inspection) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Inspection tidak ditemukan'
+            ], 404);
+        }
+
+        // 🔒 hanya inspector yang assigned yang boleh update
+        if ((int) $inspection->inspector_id !== (int) Auth::id()) {
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda tidak memiliki akses untuk mengubah template inspeksi ini'
+            ], 403);
+        }
+
+        // 🔒 pastikan punya inspection_id Backend A
+        if (!$inspection->inspection_id) {
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Inspection backend reference tidak ditemukan'
+            ], 422);
+        }
+
+        // Kirim ke Backend A
+        $result = $this->inspectionApi->updateInspectionTemplate(
+            $inspection->inspection_id,
+            [
+                'template_id' => $request->template_id
+            ]
+        );
+
+        return response()->json(
+            $result,
+            $result['status_code'] ?? 200
+        );
+    }
+
+    /**
+     * Update report template
+     */
+    public function updateInspectionReportTemplate(Request $request, $id)
+    {
+        $request->validate([
+            'report_template_id' => 'nullable|integer',
+        ]);
+
+        // Ambil inspection lokal Backend B
+        $inspection = Inspection::find($id);
+
+        if (!$inspection) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Inspection tidak ditemukan'
+            ], 404);
+        }
+
+        // 🔒 hanya inspector assigned yang boleh update
+        if ((int) $inspection->inspector_id !== (int) Auth::id()) {
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda tidak memiliki akses untuk mengubah report template inspeksi ini'
+            ], 403);
+        }
+
+        // 🔒 pastikan punya inspection_id Backend A
+        if (!$inspection->inspection_id) {
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Inspection backend reference tidak ditemukan'
+            ], 422);
+        }
+
+        // Kirim ke Backend A
+        $result = $this->inspectionApi->updateInspectionReportTemplate(
+            $inspection->inspection_id,
+            [
+                'report_template_id' => $request->report_template_id
+            ]
+        );
+
+        return response()->json(
+            $result,
+            $result['status_code'] ?? 200
+        );
+    }
+
     
 }

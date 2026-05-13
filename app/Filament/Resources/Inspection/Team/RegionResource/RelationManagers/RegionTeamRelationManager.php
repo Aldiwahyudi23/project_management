@@ -2,7 +2,9 @@
 
 namespace App\Filament\Resources\Inspection\Team\RegionResource\RelationManagers;
 
+use App\Filament\Resources\Inspection\Team\RegionTeamResource;
 use App\Models\MasterData\Region;
+use App\Models\MasterData\RegionTeam;
 use App\Models\User;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -183,8 +185,11 @@ class RegionTeamRelationManager extends RelationManager
                     ->label('Tambah Team Member'),
             ])
             ->actions([
-                Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make(),
+                //  Tables\Actions\ViewAction::make()
+                //     ->url(fn (RegionTeam $record): string => RegionTeamResource::getUrl('view', ['record' => $record])),
+                
+                Tables\Actions\EditAction::make()
+                    ->url(fn (RegionTeam $record): string => RegionTeamResource::getUrl('edit', ['record' => $record])),
                 
                 // Tombol Alihkan Region
                 Tables\Actions\Action::make('transfer')

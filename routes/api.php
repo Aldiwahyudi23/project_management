@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\AppInspection\InspectionReportController;
 use App\Http\Controllers\Api\AppInspection\InspectionVehicleController;
 use App\Http\Controllers\Api\AppInspection\Job\FormInspectionController;
 use App\Http\Controllers\Api\AppInspection\Job\JobController;
+use App\Http\Controllers\Api\AppInspection\SettingsController;
 use App\Http\Controllers\Api\CustomerSellerController;
 use App\Http\Controllers\API\VehicleController;
 use Illuminate\Support\Facades\Route;
@@ -25,6 +26,10 @@ Route::prefix('app-inspection')->middleware(['auth:sanctum'])->group(function ()
     Route::post('/store-inspection', [InspectionController::class, 'store']);
     Route::get('/get-form-templates', [InspectionController::class, 'getFormTemplates']);
     Route::post('/vehicle/by-plate', [InspectionController::class, 'getByPlate']);
+    //Untuk route update Template 
+    Route::put('/template-form/{id}', [InspectionController::class, 'updateInspectionTemplate']);
+    Route::put('/template-report/{id}', [InspectionController::class, 'updateInspectionReportTemplate']);
+
     // Jobs endpoints
     Route::prefix('jobs')->group(function () {
 
@@ -85,6 +90,11 @@ Route::prefix('app-inspection')->middleware(['auth:sanctum'])->group(function ()
         Route::get('/{id}/document/preview-pdf', [InspectionReportController::class, 'previewPDF']);
 
     
+    });
+
+    Route::prefix('settings')->group(function () {
+        Route::get('/inspection-templates', [SettingsController::class, 'index']);
+        Route::put('/inspection-templates/{id}/set-default', [SettingsController::class, 'updateDefaultTemplate']);
     });
 
     Route::prefix('vehicle')->group(function () {

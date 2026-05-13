@@ -638,4 +638,110 @@ public function putInspectionVehicle(
             'data' => $response->json('data')
         ];
     }
+
+    /**
+     * Update inspection form template
+     *
+     * @param int $inspectionId
+     * @param array $data
+     * @return array
+     */
+    public function updateInspectionTemplate(int $inspectionId, array $data): array
+    {
+        $url = "{$this->baseUrl}/inspection/template/inspection-form/{$inspectionId}";
+
+        try {
+            $response = Http::withToken($this->token)
+                ->acceptJson()
+                ->timeout(30)
+                ->put($url, $data);
+
+            $responseData = $response->json();
+
+            // Jika gagal
+            if ($response->failed()) {
+
+                return [
+                    ...$responseData,
+                    'status_code' => $response->status(),
+                ];
+            }
+
+            return [
+                'success'     => $responseData['success'] ?? true,
+                'message'     => $responseData['message'] ?? 'Inspection template updated successfully',
+                'data'        => $responseData['data'] ?? [],
+                'status_code' => $response->status(),
+            ];
+
+        } catch (RequestException $e) {
+
+            return [
+                'success' => false,
+                'message' => 'Request timeout or connection error',
+                'error'   => $e->getMessage(),
+            ];
+
+        } catch (\Exception $e) {
+
+            return [
+                'success' => false,
+                'message' => 'Unexpected error occurred',
+                'error'   => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Update inspection report template
+     *
+     * @param int $inspectionId
+     * @param array $data
+     * @return array
+     */
+    public function updateInspectionReportTemplate(int $inspectionId, array $data): array
+    {
+        $url = "{$this->baseUrl}/inspection/template/inspection-report/{$inspectionId}";
+
+        try {
+            $response = Http::withToken($this->token)
+                ->acceptJson()
+                ->timeout(30)
+                ->put($url, $data);
+
+            $responseData = $response->json();
+
+            // Jika gagal
+            if ($response->failed()) {
+
+                return [
+                    ...$responseData,
+                    'status_code' => $response->status(),
+                ];
+            }
+
+            return [
+                'success'     => $responseData['success'] ?? true,
+                'message'     => $responseData['message'] ?? 'Report template updated successfully',
+                'data'        => $responseData['data'] ?? [],
+                'status_code' => $response->status(),
+            ];
+
+        } catch (RequestException $e) {
+
+            return [
+                'success' => false,
+                'message' => 'Request timeout or connection error',
+                'error'   => $e->getMessage(),
+            ];
+
+        } catch (\Exception $e) {
+
+            return [
+                'success' => false,
+                'message' => 'Unexpected error occurred',
+                'error'   => $e->getMessage(),
+            ];
+        }
+    }
 }
