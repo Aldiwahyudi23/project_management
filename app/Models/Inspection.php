@@ -99,6 +99,14 @@ class Inspection extends Model
     }
 
     /**
+     * get report link
+     */
+    public function reportLink()
+    {
+        return $this->hasOne(InspectionReportLink::class);
+    }
+
+    /**
      * Get the user who submitted this inspection.
      */
     public function submittedBy(): BelongsTo

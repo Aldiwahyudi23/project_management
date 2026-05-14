@@ -239,24 +239,46 @@ class InspectionReportApiService
         }
     }
 
-    public function downloadPDF(int $inspectionId)
+    public function getLinkPdf(int $inspectionId): array
     {
-        $url = "{$this->baseUrl}/inspection/report/{$inspectionId}/document/download";
+        $url = "{$this->baseUrl}/inspection/report/{$inspectionId}/link";
 
-        // Kembalikan raw response, bukan array
-        return Http::withToken($this->token)
-            ->timeout(30)
-            ->get($url);
-    }
+        try {
+            $response = Http::withToken($this->token)
+                ->acceptJson()
+                ->timeout(15)
+                ->get($url);
 
-    public function previewPDF(int $inspectionId)
-    {
-        $url = "{$this->baseUrl}/inspection/report/{$inspectionId}/document/preview";
+            if ($response->failed()) {
+                Log::error('Inspection API Error (getLinkPdf)', [
+                    'status'        => $response->status(),
+                    'body'          => $response->body(),
+                    'inspection_id' => $inspectionId,
+                ]);
 
-        // Ada typo di kode lama — kurang "/" sebelum document
-        return Http::withToken($this->token)
-            ->timeout(30)
-            ->get($url);
+                return [
+                    'success' => false,
+                    'message' => 'Gagal mendapatkan link dokumen.',
+                    'error'   => $response->json(),
+                ];
+            }
+
+            return [
+                'success' => true,
+                'data'    => $response->json('data') ?? $response->json(),
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('Exception in InspectionReportApiService::getLinkPdf', [
+                'message'       => $e->getMessage(),
+                'inspection_id' => $inspectionId,
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'Service exception: ' . $e->getMessage(),
+            ];
+        }
     }
 
 }

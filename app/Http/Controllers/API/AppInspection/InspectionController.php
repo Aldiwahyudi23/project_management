@@ -346,14 +346,13 @@ class InspectionController extends Controller
         //
     }
 
-        /**
+    /**
      * Get template for user (FORM type only)
      */
     public function getFormTemplates(Request $request)
     {
-        $userId = Auth::id();
+        $userId = 2;
 
-        // 🔒 Belum login
         if (!$userId) {
             return response()->json([
                 'success' => false,
@@ -361,48 +360,82 @@ class InspectionController extends Controller
             ], 401);
         }
 
-        // Ambil semua data user (type FORM)
+        // =========================
+        // GET GLOBAL TEMPLATE
+        // =========================
+        $globalTemplates = collect(
+            $this->apiService->getDefaultTemplates()['data'] ?? []
+        )->map(function ($item) {
+            return [
+                'id'          => $item['id'],
+                'name'        => $item['name'],
+                'description' => $item['description'],
+                'is_default'  => $item['is_default'],
+                'source'      => 'global',
+            ];
+        });
+
+        // =========================
+        // GET USER TEMPLATE
+        // =========================
         $userTemplates = UserInspectionTemplate::query()
             ->byUser($userId)
             ->byType(UserInspectionTemplate::TYPE_FORM)
+            ->where('is_active', true)
             ->get();
 
-        // ❌ Tidak punya data sama sekali
+        // =========================
+        // USER TIDAK PUNYA TEMPLATE
+        // =========================
         if ($userTemplates->isEmpty()) {
+
             return response()->json([
                 'source' => 'global_default',
-                'data' => $this->apiService->getDefaultTemplates()['data'] ?? []
+                'data'   => $globalTemplates->values(),
             ]);
         }
 
-        // Filter yang aktif
-        $activeTemplates = $userTemplates->where('is_active', true);
+        // =========================
+        // FORMAT USER TEMPLATE
+        // =========================
+        $formattedUserTemplates = $userTemplates->map(function ($item) {
+            return [
+                'id'          => $item->template_id,
+                'name'        => $item->name,
+                'description' => null,
+                'is_default'  => $item->is_default,
+                'source'      => 'user',
+            ];
+        });
 
-        // ❌ Tidak ada yang aktif
-        if ($activeTemplates->isEmpty()) {
-            return response()->json([
-                'source' => 'global_default',
-                'data' => $this->apiService->getDefaultTemplates()['data'] ?? []
-            ]);
-        }
+        // =========================
+        // CEK USER DEFAULT
+        // =========================
+        $defaultTemplate = $formattedUserTemplates
+            ->firstWhere('is_default', true);
 
-        // Cek default di user
-        $defaultTemplate = $activeTemplates
-            ->where('is_default', true)
-            ->first();
-
-        // ✅ Ada default → ambil 1 saja
+        // =========================
+        // ADA DEFAULT
+        // =========================
         if ($defaultTemplate) {
+
             return response()->json([
                 'source' => 'user_default',
-                'data' => $defaultTemplate
+                'data'   => $defaultTemplate,
             ]);
         }
 
-        // ✅ Ada data aktif tapi tidak ada default
+        // =========================
+        // TIDAK ADA DEFAULT
+        // USER ACTIVE + GLOBAL
+        // =========================
+        $mergedTemplates = $formattedUserTemplates
+            ->concat($globalTemplates)
+            ->values();
+
         return response()->json([
-            'source' => 'user_selection',
-            'data' => $activeTemplates->values()
+            'source' => 'mixed_selection',
+            'data'   => $mergedTemplates,
         ]);
     }
 

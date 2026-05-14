@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\AppInspection\Job\JobController;
 use App\Http\Controllers\Api\AppInspection\SettingsController;
 use App\Http\Controllers\Api\CustomerSellerController;
 use App\Http\Controllers\API\VehicleController;
+use App\Http\Controllers\API\WebInspection\PublicInspectionReportController;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Http\Request;
 
@@ -89,6 +90,9 @@ Route::prefix('app-inspection')->middleware(['auth:sanctum'])->group(function ()
         Route::get('/{id}/document/download-pdf', [InspectionReportController::class, 'downloadPDF']);
         Route::get('/{id}/document/preview-pdf', [InspectionReportController::class, 'previewPDF']);
 
+         Route::get('/send-whatsapp/{id}',[InspectionReportController::class, 'sendWhatsapp']
+    );
+
     
     });
 
@@ -122,6 +126,19 @@ Route::prefix('app-inspection')->middleware(['auth:sanctum'])->group(function ()
     });
 });
 
+//===============Untuk Website Inspection Report (Public)========================
+Route::prefix('public')->group(function () {
+
+    Route::get(
+        '/report-inspection/{code}',
+        [PublicInspectionReportController::class, 'show']
+    );
+
+    Route::get(
+        '/report-inspection/{code}/download',
+        [PublicInspectionReportController::class, 'download']
+    );
+});
 
 Route::get('/test', function () {
     return response()->json([
