@@ -8,8 +8,8 @@ use App\Http\Controllers\Api\AppInspection\Job\FormInspectionController;
 use App\Http\Controllers\Api\AppInspection\Job\JobController;
 use App\Http\Controllers\Api\AppInspection\SettingsController;
 use App\Http\Controllers\Api\CustomerSellerController;
-use App\Http\Controllers\API\VehicleController;
-use App\Http\Controllers\API\WebInspection\PublicInspectionReportController;
+use App\Http\Controllers\Api\VehicleController;
+use App\Http\Controllers\Api\WebInspection\PublicInspectionReportController;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Http\Request;
 
@@ -83,6 +83,7 @@ Route::prefix('app-inspection')->middleware(['auth:sanctum'])->group(function ()
 
         //generate PDF
         Route::post('/{id}/generate-pdf', [InspectionReportController::class, 'GeneratePDF']);
+        Route::post('/{id}/send-via-whatsapp', [InspectionReportController::class, 'sendViaWhatsapp']);
         //Crud estimasi 
         Route::post('/{id}/estimasi',              [InspectionReportController::class, 'store']);
         Route::put('/{id}/estimasi/{estimasiId}',  [InspectionReportController::class, 'update']);

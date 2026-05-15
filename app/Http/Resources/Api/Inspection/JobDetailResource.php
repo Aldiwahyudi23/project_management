@@ -170,6 +170,7 @@ protected function resolveTemplateReport($external)
         $response['selected'] = [
             'id' => $template['id'],
             'name' => $template['name'] ?? null,
+            'type' => $template['type'] ?? null,
         ];
     } else {
         // Tidak ada data dari external, biarkan null

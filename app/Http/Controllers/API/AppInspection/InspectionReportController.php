@@ -157,6 +157,72 @@ class InspectionReportController extends Controller
         }
     }
 
+    /**
+     * mengirim laporan via whatsapp
+     */
+    public function sendViaWhatsapp($id)
+    {
+        $inspection = Inspection::find($id);
+
+        if (!$inspection) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Inspection not found',
+            ], 404);
+        }
+
+        if ((string) $inspection->inspector_id !== (string) Auth::id()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda tidak memiliki akses untuk mengirim laporan ini.',
+            ], 403);
+        }
+
+        if (!in_array($inspection->status, $this->allowedStatusForGenerate)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Mengirim laporan hanya dapat dilakukan saat status inspeksi adalah "Dalam Review".',
+            ], 403);
+        }
+
+        try {
+            $result = $this->inspectionApi
+                    ->updateInspectionStatus(
+                        $inspection->inspection_id,
+                        'approved'
+                    );
+
+            if (!$result['success']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Gagal update status . Silakan coba beberapa saat lagi.',
+                ], 500);
+            }
+
+            // Update inspection:ubah status jika perlu
+            $inspection->update([
+                'status'        => 'approved',
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'data'    => $result['data'],
+            ]);
+
+        } catch (\Exception $e) {
+            // Detail error hanya dicatat di log server, TIDAK dikirim ke frontend
+            // Log::error('InspectionReport GeneratePDF failed', [
+            //     'inspection_id' => $inspection->inspection_id,
+            //     'error'         => $e->getMessage(),
+            // ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Layanan sedang tidak tersedia. Silakan coba beberapa saat lagi.',
+            ], 503);
+        }
+    }
+
     /* =====================
      * HELPER
      * ===================== */
@@ -455,40 +521,84 @@ class InspectionReportController extends Controller
 
         /*
         |--------------------------------------------------------------------------
-        | UNDER REVIEW
+        | APPROVED 
         |--------------------------------------------------------------------------
         */
-        if ($inspection->status === 'under_review') {
+       
+        if ($inspection->status === 'approved') {
 
-            $message = $this->generateReportChatMessage(
-                $inspection
-            );
-        }
+            $result = $this->inspectionApi
+                ->getInspectionDetail($inspection->inspection_id);
 
-        /*
-        |--------------------------------------------------------------------------
-        | APPROVED / COMPLETED
-        |--------------------------------------------------------------------------
-        */
-        if (
-            in_array(
-                $inspection->status,
-                ['approved', 'completed']
-            )
-        ) {
+            $hasDocument = false;
+            $templateReportType = 'message';
 
-            $report = $this->generateReportLink(
-                $inspection
-            );
+            if ($result['success'] === true) {
 
-            $reportLink =
-                'https://cekmobil.online/report-inspection/' .
-                $report->code;
+                $inspectionData = $result['data'];
 
-            $message = $this->generateFileReportMessage(
-                inspection: $inspection,
-                reportLink: $reportLink
-            );
+                $hasDocument =
+                    $inspectionData['has_document'] ?? false;
+
+                $templateReportType =
+                    $inspectionData['template_report']['type']
+                    ?? 'message';
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | TEMPLATE PDF
+            |--------------------------------------------------------------------------
+            */
+
+            if ($templateReportType === 'pdf') {
+
+                /*
+                |--------------------------------------------------------------------------
+                | PDF TIDAK TERSEDIA
+                |--------------------------------------------------------------------------
+                */
+
+                if (!$hasDocument) {
+
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Dokumen laporan tidak tersedia.'
+                    ], 422);
+                }
+
+                /*
+                |--------------------------------------------------------------------------
+                | GENERATE PDF LINK
+                |--------------------------------------------------------------------------
+                */
+
+                $report = $this->generateReportLink(
+                    $inspection
+                );
+
+                $reportLink =
+                    'https://cekmobil.online/report-inspection/' .
+                    $report->code;
+
+                $message = $this->generateFileReportMessage(
+                    inspection: $inspection,
+                    reportLink: $reportLink
+                );
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | TEMPLATE MESSAGE
+            |--------------------------------------------------------------------------
+            */
+
+            else {
+
+                $message = $this->generateReportChatMessage(
+                    $inspection
+                );
+            }
         }
 
         return response()->json([

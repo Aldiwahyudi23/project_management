@@ -8,7 +8,8 @@ return [
 
     'allowed_origins' => [
         'http://localhost:5173',
-        'https://app-inspection.cekmobil.online',
+        'https://app.cekmobil.online',
+        'https://cekmobil.online',
 
         // Capacitor Android/iOS
         'https://localhost',

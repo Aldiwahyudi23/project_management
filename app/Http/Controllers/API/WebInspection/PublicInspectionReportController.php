@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\API\WebInspection;
+namespace App\Http\Controllers\Api\WebInspection;
 
 use Carbon\Carbon;
 use App\Models\InspectionReportLink;
